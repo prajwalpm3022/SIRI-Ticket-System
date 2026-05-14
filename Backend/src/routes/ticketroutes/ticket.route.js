@@ -10,7 +10,7 @@ router.get("/getstatus", authenticate, get_taskstatus);
 router.post(
   "/assignticket",
   authenticate,
-  upload.array("attachments", 5), // 🔥 FIX
+  upload.array("attachments", 5), //  FIX
   assign_ticket
 );
 router.get("/gettickets/:id", authenticate, get_ticket_by_id);

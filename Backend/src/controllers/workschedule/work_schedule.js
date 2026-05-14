@@ -90,7 +90,7 @@ VALUES (
 });
 
 
- const get_work_schedule = asyncHandler(async (req, res) => {
+const get_work_schedule = asyncHandler(async (req, res) => {
   const db = new DatabaseHandler();
 
   const result = await db.executeQuery(
@@ -110,172 +110,7 @@ VALUES (
   );
 });
 
-// const send_schedule_email = asyncHandler(async (req, res) => {
-//   const db = new DatabaseHandler();
-//   const { force } = req.body;
 
-//   /* ✅ 1. CHECK TODAY EMAIL SENT */
-//   const alreadySent = await db.executeQuery(
-//     `
-//     SELECT 1 FROM SCHEDULE_EMAIL_LOG
-//     WHERE TRUNC(SENT_DATE) = TRUNC(SYSDATE)
-//     `,
-//     {},
-//     "siri_db"
-//   );
-
-//   if (alreadySent.rows.length && !force) {
-//     return res.status(200).json({
-//       message: "ALREADY_SENT"
-//     });
-//   }
-
-//   /* ✅ 2. GET LAST EMAIL DATE */
-//   const lastEmailRes = await db.executeQuery(
-//     `
-//     SELECT MAX(SENT_DATE) AS LAST_SENT
-//     FROM SCHEDULE_EMAIL_LOG
-//     `,
-//     {},
-//     "siri_db"
-//   );
-
-//   const lastSentDate = lastEmailRes.rows[0]?.LAST_SENT;
-
-//   /* ✅ 3. GET UPDATED RECORDS */
-//   let query = `
-//     SELECT EMP_ID, DAYS, STATUS_ID
-//     FROM WORK_SCHEDULE
-//   `;
-
-//   if (lastSentDate) {
-//     query += ` WHERE UPDATED_DATE > :LAST_SENT`;
-//   }
-
-//   const result = await db.executeQuery(
-//     query,
-//     lastSentDate ? { LAST_SENT: lastSentDate } : {},
-//     "siri_db"
-//   );
-
-//   /* ✅ 4. NO CHANGES */
-//   if (!result.rows.length && !force) {
-//     return res.status(200).json({
-//       message: "NO_CHANGES"
-//     });
-//   }
-
-//   /* ✅ 5. IF FORCE → SEND ALL */
-//   let finalRows = result.rows;
-
-//   if (force && !result.rows.length) {
-//     const allRes = await db.executeQuery(
-//       `
-//       SELECT EMP_ID, DAYS, STATUS_ID
-//       FROM WORK_SCHEDULE
-//       `,
-//       {},
-//       "siri_db"
-//     );
-
-//     finalRows = allRes.rows;
-//   }
-
-//   /* ✅ 6. GET STATUS MASTER */
-//   const statusRes = await db.executeQuery(
-//     `SELECT STATUS_ID, WORK_STATUS FROM WORK_STATUS`,
-//     {},
-//     "siri_db"
-//   );
-
-//   const statusMap = {};
-//   statusRes.rows.forEach(s => {
-//     statusMap[s.STATUS_ID] = s.WORK_STATUS;
-//   });
-
-//   /* ✅ 7. GROUP DATA BY EMPLOYEE */
-//   const finalData = {};
-
-//   finalRows.forEach(row => {
-//     if (!finalData[row.EMP_ID]) {
-//       finalData[row.EMP_ID] = [];
-//     }
-
-//     finalData[row.EMP_ID].push({
-//       day: row.DAYS,
-//       status_id: row.STATUS_ID
-//     });
-//   });
-
-//   /* ✅ 8. SEND EMAIL */
-//   for (const emp_id of Object.keys(finalData)) {
-//     try {
-//       const empRes = await db.executeQuery(
-//         `
-//         SELECT NAME, EMAIL_ID
-//         FROM EMP
-//         WHERE EMP_ID = :EMP_ID
-//         `,
-//         { EMP_ID: emp_id },
-//         "siri_db"
-//       );
-
-//       const empName = empRes.rows[0]?.NAME;
-//       const empEmail = empRes.rows[0]?.EMAIL_ID;
-
-//       if (!empEmail) continue;
-
-//       const empSchedule = finalData[emp_id];
-
-//       const rows = empSchedule.map(s => `
-//         <tr>
-//           <td>${s.day}</td>
-//           <td>${statusMap[s.status_id] || s.status_id}</td>
-//         </tr>
-//       `).join("");
-
-//       const emailHtml = `
-//         <p>Dear ${empName || "Employee"},</p>
-
-//         <p>Your <b style="color:blue;">work schedule has been updated</b>.</p>
-
-//         <table border="1" cellpadding="6" cellspacing="0">
-//           <tr>
-//             <th>Day</th>
-//             <th>Status</th>
-//           </tr>
-//           ${rows}
-//         </table>
-
-//         <p>Regards,<br/>HR Team</p>
-//       `;
-
-//       await emailService.sendEmail(
-//         "HR Team",
-//         empEmail,
-//         "Work Schedule Updated",
-//         emailHtml
-//       );
-
-//     } catch (err) {
-//       console.error("Email failed for emp:", emp_id, err);
-//     }
-//   }
-
-//   /* ✅ 9. INSERT EMAIL LOG */
-//   await db.executeQuery(
-//     `
-//     INSERT INTO SCHEDULE_EMAIL_LOG (ID, SENT_DATE)
-//     VALUES (SCHEDULE_EMAIL_SEQ.NEXTVAL, SYSDATE)
-//     `,
-//     {},
-//     "siri_db"
-//   );
-
-//   return res.status(200).json({
-//     message: "EMAIL_SENT"
-//   });
-// });
 const send_schedule_email = asyncHandler(async (req, res) => {
   const db = new DatabaseHandler();
   const { force } = req.body;
@@ -332,38 +167,38 @@ const send_schedule_email = asyncHandler(async (req, res) => {
   }
 
   /* 5. IF FORCE → SEND ALL */
- 
-const changedEmpIds = [...new Set(result.rows.map(r => r.EMP_ID))];
 
-let finalRows = [];
+  const changedEmpIds = [...new Set(result.rows.map(r => r.EMP_ID))];
 
-if (changedEmpIds.length > 0) {
- 
-  const fullRes = await db.executeQuery(
-    `
+  let finalRows = [];
+
+  if (changedEmpIds.length > 0) {
+
+    const fullRes = await db.executeQuery(
+      `
     SELECT EMP_ID, DAYS, STATUS_ID
     FROM WORK_SCHEDULE
     WHERE EMP_ID IN (${changedEmpIds.join(",")})
     `,
-    {},
-    "siri_db"
-  );
+      {},
+      "siri_db"
+    );
 
-  finalRows = fullRes.rows;
-}
+    finalRows = fullRes.rows;
+  }
 
- if (force && !result.rows.length) {
-  const allRes = await db.executeQuery(
-    `
+  if (force && !result.rows.length) {
+    const allRes = await db.executeQuery(
+      `
     SELECT EMP_ID, DAYS, STATUS_ID
     FROM WORK_SCHEDULE
     `,
-    {},
-    "siri_db"
-  );
+      {},
+      "siri_db"
+    );
 
-  finalRows = allRes.rows;
-}
+    finalRows = allRes.rows;
+  }
 
   /* 6. GET STATUS MASTER */
   const statusRes = await db.executeQuery(
@@ -416,7 +251,7 @@ if (changedEmpIds.length > 0) {
         </tr>
       `).join("");
 
-    const emailHtml = `
+      const emailHtml = `
   <p>Dear ${empName || "Employee"},</p>
 
   <p>
@@ -528,6 +363,53 @@ const getHolidaysForSchedule = asyncHandler(async (req, res) => {
     throw new ApiError(500, "Failed to fetch holidays");
   }
 });
+
+const get_weekly_login_details = asyncHandler(async (req, res) => {
+  try {
+    const db = new DatabaseHandler();
+
+    const weekOffset = parseInt(req.query.weekOffset) || 0; // ✅ read from query param
+
+    const today = new Date();
+    const dayOfWeek = today.getDay() === 0 ? 7 : today.getDay();
+    const monday = new Date(today);
+    monday.setDate(today.getDate() - dayOfWeek + 1 + weekOffset * 7); // ✅ apply offset
+    monday.setHours(0, 0, 0, 0);
+
+    const saturday = new Date(monday);
+    saturday.setDate(monday.getDate() + 5);
+    saturday.setHours(23, 59, 59, 999);
+
+    const result = await db.executeQuery(
+      `
+      SELECT
+        ld.EMP_ID,
+        e.NAME        AS EMP_NAME,
+        ld.LOGIN_DATE,
+        ld.LOGIN_TYPE     AS ACTUAL_STATUS,
+        ld.INTENDED_LOGIN AS ASSIGNED_STATUS
+      FROM LOGIN_DETAILS ld
+      JOIN EMP e ON e.EMP_ID = ld.EMP_ID
+      WHERE ld.LOGIN_DATE >= :FROM_DATE
+        AND ld.LOGIN_DATE <= :TO_DATE
+        AND e.WORK_ON_OFFICE = 'Y'
+      ORDER BY e.NAME, ld.LOGIN_DATE
+      `,
+      {
+        FROM_DATE: monday,
+        TO_DATE: saturday
+      },
+      "siri_db"
+    );
+
+    return res.status(200).json(
+      new ApiResponse(200, result.rows || [], "Weekly login details fetched")
+    );
+  } catch (error) {
+    console.error(error);
+    throw new ApiError(500, "Failed to fetch weekly login details");
+  }
+});
 module.exports = {
   get_status_master,
   getEmployee,
@@ -535,6 +417,7 @@ module.exports = {
   get_work_schedule,
   getAllEmployeeLeavesForSchedule,
   getHolidaysForSchedule,
-  send_schedule_email
-  
+  send_schedule_email,
+  get_weekly_login_details
+
 };

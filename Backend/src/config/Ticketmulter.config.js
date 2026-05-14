@@ -3,7 +3,7 @@ import path from "path";
 import fs from "fs";
 
 // Create uploads/docs folder if not exists
-const uploadPath = "uploads/TicketDocs";
+const uploadPath = path.resolve(__dirname, "..", "..", "uploads", "TicketDocs");
 
 if (!fs.existsSync(uploadPath)) {
     fs.mkdirSync(uploadPath, { recursive: true });

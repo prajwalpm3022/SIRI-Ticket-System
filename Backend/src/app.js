@@ -1,12 +1,19 @@
 const express = require("express");
 const cors = require("cors");
 const app = express();
-app.set("trust proxy", true); 
+const http = require("http");
+const { Server } = require("socket.io");
+const httpServer = http.createServer(app);
+const io = new Server(httpServer, {
+  cors: { origin: "*" }
+});
+app.set("trust proxy", true);
 const { ApiResponse, ApiError } = require("./utils");
 const { errorHandler } = require("./middlewares");
 const path = require("path");
 require("./cron/earnedleave.cron");
 require("./cron/compoffexpiry.corn");
+require("./cron/autoclosenticket.cron")
 
 /* COMMON MIDDLEWARE */
 app.use(cors());
@@ -37,7 +44,7 @@ app.use("/api/v1/leave", require("./routes/leaveroutes/leave.route"));
 app.use("/api/v1/adminleave", require("./routes/leaveroutes/adminleave.route"));
 app.use("/uploads", express.static(path.join(__dirname, "..", "uploads")));
 app.use("/api/v1/customer", require("./routes/customerroutes/customer.routes"));
-app.use("/api/v1/leaveallotment",require("./routes/leaveroutes/leaveallotment.route"));
+app.use("/api/v1/leaveallotment", require("./routes/leaveroutes/leaveallotment.route"));
 app.use("/api/v1/module", require("./routes/project/module.route"));
 app.use("/api/v1/project", require("./routes/project/project.route"));
 app.use("/api/v1/projectteam", require("./routes/project/projectteam.route"));
@@ -52,18 +59,24 @@ app.use("/api/v1/drawer", require("./routes/drawer.routes"));
 app.use("/api/v1/task", require("./routes/taskroutes/task.route"));
 app.use("/api/v1/ticket", require("./routes/ticketroutes/ticket.route"));
 app.use("/api/v1/workschedule", require("./routes/workscheduleroutes/workschedule.route"));
-app.use("/api/v1/Login", require("./routes/Ticket_System/Login.route"));
+app.use("/api/v1/TicketLogin", require("./routes/Ticket_System/Login.route"));
 app.use("/api/v1/CreateTicket", require("./routes/Ticket_System/CreateTicket.route"));
 app.use("/api/v1/AdminDashBoard", require("./routes/Ticket_System/AdminDashBoard.route"));
 app.use("/api/v1/UserCreationByAdmin", require("./routes/Ticket_System/UserCreationByAdminRoute/UserCreation.route"));
 app.use("/api/v1/DeptCreation", require("./routes/Ticket_System/DeptCreationRoute/DeptCreation.route"));
+app.use("/api/v1/TicketChat", require("./routes/Ticket_System/Ticket_chat/Ticket_Chat.route"));
+app.use("/api/v1/TicketStatusByEN", require("./routes/ticketroutes/TicketStatusByEN.route"));
+app.use("/api/v1/Notificationtype", require("./routes/Notification/Notificationtype.route"));
+app.use("/api/v1/Notification", require("./routes/Notification/Notification.route"));
+app.use("/api/v1/ticketnotification", require("./routes/Ticket_System/NotificationRoute/ticketnotification.route"));
 app.use("/*splat", (req, res, next) => {
   console.log(`Undefined route accessed: ${req.originalUrl}`);
   next(new ApiError(404, "Route not found"));
 });
 
+require("./socket/ticketChat.socket")(io);
 /* ERROR HANDLER */
 app.use(errorHandler);
 
 /* EXPORT APP */
-module.exports = { app };
+module.exports = { app, httpServer };

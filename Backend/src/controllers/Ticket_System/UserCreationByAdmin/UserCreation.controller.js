@@ -5,7 +5,7 @@ const {
     ApiResponse,
     DatabaseHandler } = require("../../../utils");
 const OracleDB = require("oracledb");
-
+const bcrypt = require("bcrypt");
 
 const getCustLogins = asyncHandler(async (req, res) => {
     try {
@@ -24,7 +24,6 @@ const getCustLogins = asyncHandler(async (req, res) => {
                 cl.CUST_DEPT_ID,
                 cd.CUST_DEPT_NAME,
                 cl.CUST_USER_ID,
-                cl.CUST_PASSWORD,
                 cl.NAME,
                 cl.EMAIL,
                 cl.LOGIN_TYPE,
@@ -93,6 +92,8 @@ const createCustLogin = asyncHandler(async (req, res) => {
             throw new ApiError(400, "Required fields: cust_id, cust_dept_id, cust_user_id, cust_password, name");
         }
 
+        // Hash the password using SHA-256 (Node built-in)
+        const hashedPassword = await bcrypt.hash(cust_password, 10);
         // Check duplicate user ID
         const dupCheck = await db.executeQuery(
             `SELECT CUST_USER_ID FROM cust_login WHERE CUST_USER_ID = :cust_user_id`,
@@ -103,7 +104,7 @@ const createCustLogin = asyncHandler(async (req, res) => {
             throw new ApiError(409, "User ID already exists");
         }
 
-        //  Check if department already has a Section Head
+        // Check if department already has a Section Head
         if (login_type === "SH") {
             const shCheck = await db.executeQuery(
                 `SELECT CUST_USER_ID FROM cust_login 
@@ -148,12 +149,12 @@ const createCustLogin = asyncHandler(async (req, res) => {
             cust_id,
             cust_dept_id,
             cust_user_id,
-            cust_password,
+            cust_password: hashedPassword, //  store the hash, not plain text
             name,
             email: email ?? null,
             login_type: login_type ?? null,
             mobile: mobile ?? null,
-            active: active ?? 1,
+            active: active ?? "Y",
         };
 
         await db.executeQuery(insertQuery, binds, "siri_db");
@@ -177,7 +178,8 @@ const updateCustLogin = asyncHandler(async (req, res) => {
             cust_id,
             cust_dept_id,
             cust_user_id,
-            cust_password,
+            old_password,   
+            new_password,   
             name,
             email,
             login_type,
@@ -190,21 +192,36 @@ const updateCustLogin = asyncHandler(async (req, res) => {
             throw new ApiError(400, "cust_login_id is required for update");
         }
 
-        if (!cust_id || !cust_dept_id || !cust_user_id || !cust_password || !name) {
-            throw new ApiError(400, "Required fields: cust_id, cust_dept_id, cust_user_id, cust_password, name");
+        if (!cust_id || !cust_dept_id || !cust_user_id || !name) {
+            throw new ApiError(400, "Required fields: cust_id, cust_dept_id, cust_user_id, name");
         }
 
-        // Check if record exists
+        // Check if record exists + fetch current password ✅
         const existCheck = await db.executeQuery(
-            `SELECT CUST_LOGIN_ID FROM cust_login WHERE CUST_LOGIN_ID = :cust_login_id`,
+            `SELECT CUST_LOGIN_ID, CUST_PASSWORD FROM cust_login WHERE CUST_LOGIN_ID = :cust_login_id`,
             { cust_login_id },
             "siri_db"
         );
+
         if ((existCheck.rows || []).length === 0) {
             throw new ApiError(404, "User not found");
         }
 
-        // Check duplicate user ID (exclude current record)
+        //  Verify old password if new password is provided
+        if (new_password && new_password.trim() !== "") {
+            if (!old_password || old_password.trim() === "") {
+                throw new ApiError(400, "Old password is required to set a new password");
+            }
+
+            const storedHash = existCheck.rows[0].CUST_PASSWORD;
+            const isMatch = await bcrypt.compare(old_password.trim(), storedHash);
+
+            if (!isMatch) {
+                throw new ApiError(400, "Old password is incorrect");
+            }
+        }
+
+        // Check duplicate user ID
         const dupCheck = await db.executeQuery(
             `SELECT CUST_USER_ID FROM cust_login 
              WHERE CUST_USER_ID = :cust_user_id 
@@ -212,11 +229,12 @@ const updateCustLogin = asyncHandler(async (req, res) => {
             { cust_user_id, cust_login_id },
             "siri_db"
         );
+
         if ((dupCheck.rows || []).length > 0) {
             throw new ApiError(409, "User ID already exists");
         }
 
-        // Check if department already has a Section Head (exclude current record)
+        // Section Head check
         if (login_type === "SH") {
             const shCheck = await db.executeQuery(
                 `SELECT CUST_USER_ID FROM cust_login 
@@ -226,25 +244,30 @@ const updateCustLogin = asyncHandler(async (req, res) => {
                 { cust_dept_id, cust_login_id },
                 "siri_db"
             );
+
             if ((shCheck.rows || []).length > 0) {
-                throw new ApiError(
-                    409,
-                    "This department already has a Section Head. Only one Section Head is allowed per department."
-                );
+                throw new ApiError(409, "This department already has a Section Head.");
             }
         }
 
+        // Hash new password only if provided 
+        let hashedPassword = null;
+        if (new_password && new_password.trim() !== "") {
+            hashedPassword = await bcrypt.hash(new_password.trim(), 10);
+        }
+
+        // Update query
         const updateQuery = `
             UPDATE cust_login SET
-                CUST_ID       = :cust_id,
-                CUST_DEPT_ID  = :cust_dept_id,
-                CUST_USER_ID  = :cust_user_id,
-                CUST_PASSWORD = :cust_password,
-                NAME          = :name,
-                EMAIL         = :email,
-                LOGIN_TYPE    = :login_type,
-                MOBILE        = :mobile,
-                ACTIVE        = :active
+                CUST_ID      = :cust_id,
+                CUST_DEPT_ID = :cust_dept_id,
+                CUST_USER_ID = :cust_user_id,
+                NAME         = :name,
+                EMAIL        = :email,
+                LOGIN_TYPE   = :login_type,
+                MOBILE       = :mobile,
+                ACTIVE       = :active
+                ${hashedPassword ? ", CUST_PASSWORD = :cust_password" : ""}
             WHERE CUST_LOGIN_ID = :cust_login_id
         `;
 
@@ -253,12 +276,12 @@ const updateCustLogin = asyncHandler(async (req, res) => {
             cust_id,
             cust_dept_id,
             cust_user_id,
-            cust_password,
             name,
             email: email ?? null,
             login_type: login_type ?? null,
             mobile: mobile ?? null,
             active: active ?? "Y",
+            ...(hashedPassword && { cust_password: hashedPassword }),
         };
 
         await db.executeQuery(updateQuery, binds, "siri_db");
@@ -266,6 +289,7 @@ const updateCustLogin = asyncHandler(async (req, res) => {
         res.status(200).json(
             new ApiResponse(200, null, "Customer login updated successfully")
         );
+
     } catch (err) {
         console.error("updateCustLogin Error:", err);
         if (err instanceof ApiError) throw err;

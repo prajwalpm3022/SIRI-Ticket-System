@@ -7,7 +7,8 @@ const {
 const OracleDB = require("oracledb");
 const path = require("path");
 const fs = require("fs");
-const uploadPath = path.join(path.resolve(), "uploads/TicketDocs");
+const { log } = require("console");
+const uploadPath = path.resolve(__dirname, "..", "..", "..", "uploads", "TicketDocs");
 
 const getTickets = asyncHandler(async (req, res) => {
     try {
@@ -64,7 +65,8 @@ const getTickets = asyncHandler(async (req, res) => {
                 td.TICKET_DOC_ID,
                 td.DOC_NAME,
                 td.UPLOADED_DATE,
-                td.DOC_UPLOADER
+                td.DOC_UPLOADER,
+                t.COMPLETED_DATE
             FROM ticket_master t
             INNER JOIN cust_dept d ON d.CUST_DEPT_ID = t.CUSTOMER_DEPT_ID
             LEFT JOIN ticket_status ts ON ts.TICKET_STATUS_ID = t.STATUS_ID
@@ -95,6 +97,7 @@ const getTickets = asyncHandler(async (req, res) => {
                     CREATED_BY: row.CREATED_BY,
                     ASSIGNED_DATE: row.ASSIGNED_DATE,
                     CLI_EXCOMP_DATE: row.CLI_EXCOMP_DATE,
+                    COMPLETED_DATE: row.COMPLETED_DATE,
                     REMARKS: row.REMARKS,
                     ASSIGNED_TIME: row.ASSIGNED_TIME,
                     ASSIGNMENT_STATUS: row.ASSIGNMENT_STATUS,
@@ -136,7 +139,6 @@ const previewTicketDocument = asyncHandler(async (req, res) => {
 
     if (!id) throw new ApiError(400, "Invalid Document ID");
 
-    // Fetch doc name from ticket_docs
     const result = await db.executeQuery(
         `SELECT DOC_NAME FROM ticket_docs WHERE TICKET_DOC_ID = :id`,
         { id: Number(id) },
@@ -148,14 +150,10 @@ const previewTicketDocument = asyncHandler(async (req, res) => {
     }
 
     const fileName = result.rows[0].DOC_NAME?.trim();
-
     if (!fileName) throw new ApiError(404, "Document name is empty");
 
-    const filePath = path.join(
-        path.resolve(),
-        "uploads/TicketDocs",
-        fileName
-    );
+    // ✅ Uses the uploadPath defined at the top of the file
+    const filePath = path.join(uploadPath, fileName);
 
 
     if (!fs.existsSync(filePath)) {
@@ -185,7 +183,7 @@ const previewTicketDocument = asyncHandler(async (req, res) => {
 
     stream.on("error", (err) => {
         console.error("Stream error:", err);
-        throw new ApiError(500, "Failed to stream file");
+        res.status(500).json({ message: "Failed to stream file" });
     });
 
     stream.pipe(res);

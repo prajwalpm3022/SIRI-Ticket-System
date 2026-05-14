@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import {
   Box,
   Typography,
@@ -21,6 +21,7 @@ import {
   Chip,
   Divider,
   CircularProgress,
+  Skeleton,
 } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
@@ -33,14 +34,16 @@ import InsertDriveFileIcon from "@mui/icons-material/InsertDriveFile";
 import CloseIcon from "@mui/icons-material/Close";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
+import ChatIcon from "@mui/icons-material/Chat";
+import { useQuery } from "@tanstack/react-query";
 import {
   GetTicketsForAdmin,
   PreviewTicketDocument,
 } from "../../Services/AdminDashBoard.services";
 import secureLocalStorage from "react-secure-storage";
 import Swal from "sweetalert2";
+import TicketChat from "../TicketChat/TicketChat";
 
-// Same department list as AdminDashBoard
 const ALL_DEPARTMENTS = [
   { id: 1, name: "MIS DEPARTMENT" },
   { id: 2, name: "ACCOUNTS DEPARTMENT" },
@@ -48,6 +51,29 @@ const ALL_DEPARTMENTS = [
   { id: 4, name: "MILKBILL DEPARTMENT" },
   { id: 5, name: "STORE DEPARTMENT" },
 ];
+
+const STATUS_MAP = {
+  null: { label: "Pending", color: "#9e9e9e" },
+  1: { label: "Under Review", color: "#5c6bc0" },
+  2: { label: "Section Head Approved", color: "#26a69a" },
+  3: { label: "Section Head Rejected", color: "#ef5350" },
+  4: { label: "Siri Admin Review", color: "#7e57c2" },
+  5: { label: "Siri Admin Approved", color: "#66bb6a" },
+  6: { label: "Siri Admin Rejected", color: "#f44336" },
+  7: { label: "Assigned", color: "#29b6f6" },
+  8: { label: "In Progress", color: "#ffa726" },
+  9: { label: "Testing", color: "#ab47bc" },
+  10: { label: "Verified", color: "#26c6da" },
+  11: { label: "Reassigned", color: "#ff7043" },
+  12: { label: "Completed", color: "#4caf50" },
+  13: { label: "Attachment Required", color: "#ec407a" },
+  14: { label: "Reopened", color: "#26c6da" },
+};
+
+const getStatusInfo = (statusId) => {
+  const key = statusId === null || statusId === undefined ? "null" : statusId;
+  return STATUS_MAP[key] || { label: "Unknown", color: "#bdbdbd" };
+};
 
 export default function AdminTicketView() {
   const { deptId } = useParams();
@@ -59,10 +85,10 @@ export default function AdminTicketView() {
     ALL_DEPARTMENTS.find((d) => d.id === Number(deptId))?.name ||
     "DEPARTMENT";
 
-  const [tab, setTab] = useState(0);
-  const [tickets, setTickets] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const AdminID = secureLocalStorage.getItem("USER_ID");
+  const currentUserType = secureLocalStorage.getItem("LOGIN_TYPE") || "A";
 
+  const [tab, setTab] = useState(0);
   const [selectedDate, setSelectedDate] = useState(null);
   const [searchDate, setSearchDate] = useState(null);
 
@@ -80,59 +106,33 @@ export default function AdminTicketView() {
   const [openInfoDialog, setOpenInfoDialog] = useState(false);
   const [selectedTicketInfo, setSelectedTicketInfo] = useState(null);
 
-  const AdminID = secureLocalStorage.getItem("USER_ID");
+  // Chat
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatTicketId, setChatTicketId] = useState(null);
+  const [chatTicketTitle, setChatTicketTitle] = useState("");
 
-  //  Uses same GetTicketsForAdmin API — filtered by deptId
-  const fetchTickets = async () => {
-    try {
-      setLoading(true);
-      const response = await GetTicketsForAdmin(
+  // ─── React Query ───────────────────────────────────────────
+  const { data: tickets = [], isFetching: loading } = useQuery({
+    queryKey: ["adminTicketView", deptId],
+    queryFn: async () => {
+      const res = await GetTicketsForAdmin(
         AdminID,
         null,
         null,
         deptId || null,
         null,
       );
-      setTickets(response?.items || []);
-    } catch (error) {
-      console.error(error);
-    } finally {
-      setLoading(false);
-    }
-  };
+      return res?.items || [];
+    },
+  });
 
-  useEffect(() => {
-    fetchTickets();
-  }, [deptId]);
-  
-  const STATUS_MAP = {
-    null: { label: "Pending", color: "#9e9e9e" },
-    1: { label: "Under Review", color: "#5c6bc0" },
-    2: { label: "Section Head Approved", color: "#26a69a" },
-    3: { label: "Section Head Rejected", color: "#ef5350" },
-    4: { label: "Siri Admin Review", color: "#7e57c2" },
-    5: { label: "Siri Admin Approved", color: "#66bb6a" },
-    6: { label: "Siri Admin Rejected", color: "#f44336" },
-    7: { label: "Assigned", color: "#29b6f6" },
-    8: { label: "In Progress", color: "#ffa726" },
-    9: { label: "Testing", color: "#ab47bc" },
-    10: { label: "Verified", color: "#26c6da" },
-    11: { label: "Reassigned", color: "#ff7043" },
-    12: { label: "Completed", color: "#4caf50" },
-    13: { label: "Attachment Required", color: "#ec407a" },
-  };
-
-  const getStatusInfo = (statusId) => {
-    const key = statusId === null || statusId === undefined ? "null" : statusId;
-    return STATUS_MAP[key] || { label: "Unknown", color: "#bdbdbd" };
-  };
   // ─── Row mapping ───────────────────────────────────────────
   const mapRow = (t) => ({
     id: t.TICKET_ID,
     title: t.TITLE,
     status: t.STATUS_ID ?? null,
     statusName: t.STATUS_NAME ?? "Pending",
-    statusColor: getStatusInfo(t.STATUS_ID).color, // ✅ add this
+    statusColor: getStatusInfo(t.STATUS_ID).color,
     createdAt: t.CREATED_AT || null,
     expectedDate: t.CLI_EXCOMP_DATE || null,
     completedDate: t.ASSIGNED_DATE || null,
@@ -146,9 +146,7 @@ export default function AdminTicketView() {
 
   const getRows = () => {
     let filtered = tickets.map(mapRow);
-
     if (tab === 0) {
-      //  New — null/pending + 1,2,3,4
       filtered = filtered.filter(
         (t) =>
           t.status === null ||
@@ -156,35 +154,28 @@ export default function AdminTicketView() {
           [1, 2, 3, 4].includes(t.status),
       );
     } else if (tab === 1) {
-      //  Open — 5,7,8,9,10,11,13
       filtered = filtered.filter((t) =>
-        [5, 7, 8, 9, 10, 11, 13].includes(t.status),
+        [5, 7, 8, 9, 10, 11, 13, 14].includes(t.status),
       );
-      if (searchDate) {
+      if (searchDate)
         filtered = filtered.filter(
           (t) =>
             dayjs(t.expectedDate).format("YYYY-MM-DD") ===
             dayjs(searchDate).format("YYYY-MM-DD"),
         );
-      }
     } else if (tab === 2) {
-      // Completed — 6,12
       filtered = filtered.filter((t) => [6, 12].includes(t.status));
-      if (searchDate) {
+      if (searchDate)
         filtered = filtered.filter(
           (t) =>
             dayjs(t.completedDate).format("YYYY-MM-DD") ===
             dayjs(searchDate).format("YYYY-MM-DD"),
         );
-      }
     }
-
     return filtered;
   };
 
-  // ─── Tab counts ────────────────────────────────────────────
   const allRows = tickets.map(mapRow);
-
   const newCount = allRows.filter(
     (t) =>
       t.status === null ||
@@ -192,7 +183,7 @@ export default function AdminTicketView() {
       [1, 2, 3, 4].includes(t.status),
   ).length;
   const openCount = allRows.filter((t) =>
-    [5, 7, 8, 9, 10, 11, 13].includes(t.status),
+    [5, 7, 8, 9, 10, 11, 13, 14].includes(t.status),
   ).length;
   const completedCount = allRows.filter((t) =>
     [6, 12].includes(t.status),
@@ -210,6 +201,13 @@ export default function AdminTicketView() {
     e.stopPropagation();
     setSelectedTicketInfo(row);
     setOpenInfoDialog(true);
+  };
+
+  const handleOpenChat = (e, row) => {
+    e.stopPropagation();
+    setChatTicketId(row.id);
+    setChatTicketTitle(row.title);
+    setChatOpen(true);
   };
 
   const handlePreview = async (docId, docName) => {
@@ -230,7 +228,7 @@ export default function AdminTicketView() {
       setPreviewName(docName);
       setOpenDocsDialog(false);
       setOpenPreview(true);
-    } catch (error) {
+    } catch {
       Swal.fire({
         icon: "error",
         title: "Failed to preview document",
@@ -255,7 +253,7 @@ export default function AdminTicketView() {
   const docsColumn = {
     field: "docs",
     headerName: "Documents",
-    width: 120,
+    width: 110,
     align: "center",
     headerAlign: "center",
     renderCell: (params) => {
@@ -282,27 +280,6 @@ export default function AdminTicketView() {
     },
   };
 
-  const infoActionColumn = {
-    field: "actions",
-    headerName: "Info",
-    width: 100,
-    headerAlign: "center",
-    align: "center",
-    sortable: false,
-    renderCell: (params) => (
-      <Tooltip title="View Ticket Info">
-        <IconButton
-          size="small"
-          onClick={(e) => handleOpenInfo(e, params.row)}
-          sx={{ color: "#6F60C1" }}
-        >
-          <InfoOutlinedIcon />
-        </IconButton>
-      </Tooltip>
-    ),
-  };
-
-  //  show info on ALL tabs, proceed only on New tab (tab === 0)
   const statusColumn = {
     field: "statusName",
     headerName: "Status",
@@ -324,7 +301,50 @@ export default function AdminTicketView() {
     ),
   };
 
-  const baseColumns = [
+  const infoActionColumn = {
+    field: "info",
+    headerName: "Info",
+    width: 80,
+    headerAlign: "center",
+    align: "center",
+    sortable: false,
+    renderCell: (params) => (
+      <Tooltip title="View Ticket Info">
+        <IconButton
+          size="small"
+          onClick={(e) => handleOpenInfo(e, params.row)}
+          sx={{ color: "#6F60C1" }}
+        >
+          <InfoOutlinedIcon />
+        </IconButton>
+      </Tooltip>
+    ),
+  };
+
+  const chatColumn = {
+    field: "chat",
+    headerName: "Chat",
+    width: 80,
+    headerAlign: "center",
+    align: "center",
+    sortable: false,
+    renderCell: (params) => (
+      <Tooltip title="Open Ticket Chat">
+        <IconButton
+          size="small"
+          onClick={(e) => handleOpenChat(e, params.row)}
+          sx={{
+            color: "#6F60C1",
+            "&:hover": { bgcolor: "rgba(111,96,193,0.08)" },
+          }}
+        >
+          <ChatIcon fontSize="small" />
+        </IconButton>
+      </Tooltip>
+    ),
+  };
+
+  const commonColumns = [
     {
       field: "id",
       headerName: "Ticket ID",
@@ -337,53 +357,27 @@ export default function AdminTicketView() {
     {
       field: "createdAt",
       headerName: "Created At",
-      width: 140,
-      renderCell: (params) =>
-        params.value ? dayjs(params.value).format("DD-MMM-YYYY") : "-",
+      width: 130,
+      renderCell: (p) => (p.value ? dayjs(p.value).format("DD-MMM-YYYY") : "-"),
     },
     {
       field: "expectedDate",
       headerName: "Expected Date",
-      width: 140,
-      renderCell: (params) =>
-        params.value ? dayjs(params.value).format("DD-MMM-YYYY") : "-",
+      width: 130,
+      renderCell: (p) => (p.value ? dayjs(p.value).format("DD-MMM-YYYY") : "-"),
     },
     docsColumn,
-    infoActionColumn,
   ];
 
+  const baseColumns = [...commonColumns, infoActionColumn, chatColumn];
   const completedColumns = [
-    {
-      field: "id",
-      headerName: "Ticket ID",
-      width: 100,
-      align: "center",
-      headerAlign: "center",
-    },
-    { field: "title", headerName: "Title", flex: 1 },
-    statusColumn,
-    {
-      field: "createdAt",
-      headerName: "Created At",
-      width: 140,
-      renderCell: (params) =>
-        params.value ? dayjs(params.value).format("DD-MMM-YYYY") : "-",
-    },
-    {
-      field: "expectedDate",
-      headerName: "Expected Date",
-      width: 140,
-      renderCell: (params) =>
-        params.value ? dayjs(params.value).format("DD-MMM-YYYY") : "-",
-    },
+    ...commonColumns,
     {
       field: "completedDate",
       headerName: "Completed Date",
-      width: 140,
-      renderCell: (params) =>
-        params.value ? dayjs(params.value).format("DD-MMM-YYYY") : "-",
+      width: 130,
+      renderCell: (p) => (p.value ? dayjs(p.value).format("DD-MMM-YYYY") : "-"),
     },
-    docsColumn,
     infoActionColumn,
   ];
 
@@ -391,16 +385,14 @@ export default function AdminTicketView() {
   return (
     <LocalizationProvider dateAdapter={AdapterDayjs}>
       <Box sx={{ p: 3 }} bgcolor="#f6f7fb">
-        {/* Header */}
         <Typography variant="h5" fontWeight={600} mb={2}>
           {deptName} TICKETS
         </Typography>
 
         <Card sx={{ borderRadius: 3, p: 2, boxShadow: 4 }}>
-          {/* Tabs with counts */}
           <Tabs
             value={tab}
-            onChange={(e, v) => {
+            onChange={(_, v) => {
               setTab(v);
               setSelectedDate(null);
               setSearchDate(null);
@@ -410,7 +402,7 @@ export default function AdminTicketView() {
             <Tab
               label={
                 <Box display="flex" alignItems="center" gap={1}>
-                  New
+                  New{" "}
                   <Chip
                     label={newCount}
                     size="small"
@@ -423,7 +415,7 @@ export default function AdminTicketView() {
             <Tab
               label={
                 <Box display="flex" alignItems="center" gap={1}>
-                  Open
+                  Open{" "}
                   <Chip
                     label={openCount}
                     size="small"
@@ -436,7 +428,7 @@ export default function AdminTicketView() {
             <Tab
               label={
                 <Box display="flex" alignItems="center" gap={1}>
-                  Completed
+                  Completed{" "}
                   <Chip
                     label={completedCount}
                     size="small"
@@ -448,7 +440,6 @@ export default function AdminTicketView() {
             />
           </Tabs>
 
-          {/* Date filter for Open / Completed tabs */}
           {tab !== 0 && (
             <Box
               display="flex"
@@ -461,7 +452,7 @@ export default function AdminTicketView() {
                 label={tab === 1 ? "Expected Date" : "Completed Date"}
                 format="DD-MMM-YYYY"
                 value={selectedDate}
-                onChange={(v) => setSelectedDate(v)}
+                onChange={setSelectedDate}
                 slotProps={{
                   textField: {
                     size: "small",
@@ -489,16 +480,64 @@ export default function AdminTicketView() {
             </Box>
           )}
 
-          {/* DataGrid */}
-          <Paper sx={{ height: 450, mt: 2 }}>
+          <Paper sx={{ height: 450, mt: 2, overflow: "hidden" }}>
             {loading ? (
-              <Box
-                display="flex"
-                justifyContent="center"
-                alignItems="center"
-                height="100%"
-              >
-                <CircularProgress sx={{ color: "#6F60C1" }} />
+              <Box sx={{ width: "100%" }}>
+                {/* Header */}
+                <Box
+                  sx={{
+                    display: "grid",
+                    gridTemplateColumns:
+                      "100px 1fr 180px 130px 130px 110px 80px 80px",
+                    alignItems: "center",
+                    px: 2,
+                    py: 1.5,
+                    bgcolor: "rgba(111,96,193,0.06)",
+                    borderBottom: "1px solid rgba(224,224,224,1)",
+                  }}
+                >
+                  {[60, 40, 100, 80, 100, 70, 30, 30].map((w, i) => (
+                    <Skeleton key={i} variant="text" width={w} height={20} />
+                  ))}
+                </Box>
+
+                {/* Rows */}
+                {Array.from({ length: 8 }).map((_, idx) => (
+                  <Box
+                    key={idx}
+                    sx={{
+                      display: "grid",
+                      gridTemplateColumns:
+                        "100px 1fr 180px 130px 130px 110px 80px 80px",
+                      alignItems: "center",
+                      px: 2,
+                      py: 1.55,
+                      borderBottom: "1px solid rgba(224,224,224,0.6)",
+                      bgcolor:
+                        idx % 2 === 0 ? "transparent" : "rgba(111,96,193,0.02)",
+                    }}
+                  >
+                    <Skeleton variant="text" width={40} />
+                    <Skeleton variant="text" width="60%" />
+                    <Skeleton
+                      variant="rounded"
+                      width={140}
+                      height={24}
+                      sx={{ borderRadius: "6px" }}
+                    />
+                    <Skeleton variant="text" width={90} />
+                    <Skeleton variant="text" width={90} />
+                    <Box sx={{ display: "flex", justifyContent: "center" }}>
+                      <Skeleton variant="circular" width={28} height={28} />
+                    </Box>
+                    <Box sx={{ display: "flex", justifyContent: "center" }}>
+                      <Skeleton variant="circular" width={28} height={28} />
+                    </Box>
+                    <Box sx={{ display: "flex", justifyContent: "center" }}>
+                      <Skeleton variant="circular" width={28} height={28} />
+                    </Box>
+                  </Box>
+                ))}
               </Box>
             ) : (
               <DataGrid
@@ -511,7 +550,6 @@ export default function AdminTicketView() {
           </Paper>
         </Card>
 
-        {/* Back link */}
         <Box mt={3}>
           <Typography
             color="#6F60C1"
@@ -523,7 +561,7 @@ export default function AdminTicketView() {
         </Box>
       </Box>
 
-      {/* ── Docs Dialog ── */}
+      {/* Docs Dialog */}
       <Dialog
         open={openDocsDialog}
         onClose={() => setOpenDocsDialog(false)}
@@ -598,7 +636,7 @@ export default function AdminTicketView() {
         </DialogContent>
       </Dialog>
 
-      {/* ── Preview Dialog ── */}
+      {/* Preview Dialog */}
       <Dialog
         open={openPreview}
         onClose={handleClosePreview}
@@ -642,7 +680,7 @@ export default function AdminTicketView() {
         </DialogActions>
       </Dialog>
 
-      {/* ── Info Dialog (Open tab only) ── */}
+      {/* Info Dialog */}
       <Dialog
         open={openInfoDialog}
         onClose={() => setOpenInfoDialog(false)}
@@ -765,6 +803,15 @@ export default function AdminTicketView() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Chat */}
+      <TicketChat
+        open={chatOpen}
+        onClose={() => setChatOpen(false)}
+        ticketId={chatTicketId}
+        ticketTitle={chatTicketTitle}
+        currentUserType={currentUserType}
+      />
     </LocalizationProvider>
   );
 }

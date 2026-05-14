@@ -10,8 +10,8 @@ export default function TicketFilter({
   onClear,
 }) {
   return (
-    <Grid container justifyContent="flex-end" alignItems="center" spacing={2}>
-      <Grid size="auto">
+    <Grid container spacing={2} justifyContent="flex-end">
+      <Grid size={{ xs: 12, md: "auto" }}>
         <LocalizationProvider dateAdapter={AdapterDayjs}>
           <DatePicker
             label="Created Date"
@@ -21,28 +21,28 @@ export default function TicketFilter({
             slotProps={{
               textField: {
                 size: "small",
-                sx: { width: 190 },
+                sx: { width: "100%" },
               },
             }}
           />
         </LocalizationProvider>
       </Grid>
 
-      <Grid size="auto">
-        <Button
-          variant="contained"
-          size="small"
-          color="primary"
-          sx={{ px: 2 }}
-          onClick={onSearch}
-        >
+      <Grid
+        size={{ xs: 12, md: "auto" }}
+        sx={{
+          display: "flex",
+          justifyContent: "flex-end",
+          alignItems: "center",
+        }}
+      >
+        <Button variant="contained" color="primary" onClick={onSearch}>
           Search
         </Button>
         <Button
           variant="contained"
-          size="small"
           color="error"
-          sx={{ px: 2,ml:2 }}
+          sx={{ ml: 1 }}
           onClick={onClear}
         >
           Clear

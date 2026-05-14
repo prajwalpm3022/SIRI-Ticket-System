@@ -22,10 +22,15 @@ let updateCustUserLogin = async (data) => {
   let response = await API.put(`${API_BASE_URL}/updateCustLogin`, data);
   return response.data;
 };
+let updateloginpasswords = async (data) => {
+  let response = await API.put(`${API_BASE_URL}/updateloginpassword`, data);
+  return response.data;
+};
 
 export {
   getCustLogins,
   getCustDepartments,
   createCustUserLogin,
   updateCustUserLogin,
+  updateloginpasswords,
 };

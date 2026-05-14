@@ -1,5 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Grid, Box, Typography } from "@mui/material";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import secureLocalStorage from "react-secure-storage";
 import {
   getCustLogins,
@@ -24,6 +25,8 @@ const INITIAL_FORM = {
   mobile: "",
   password: "",
   confirmPassword: "",
+  oldPassword: "",
+  newPassword: "",
   loginType: null,
   active: true,
 };
@@ -31,120 +34,93 @@ const INITIAL_FORM = {
 const UserCreation = () => {
   const [form, setForm] = useState(INITIAL_FORM);
   const [errors, setErrors] = useState({});
-  const [rows, setRows] = useState([]);
-  const [filteredRows, setFilteredRows] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [departments, setDepartments] = useState([]);
+  const [filteredRows, setFilteredRows] = useState(null); // null = show all
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [search, setSearch] = useState({ department: null, name: "" });
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [formLoading, setFormLoading] = useState(false);
 
   const cust_id = secureLocalStorage.getItem("USER_ID");
+  const queryClient = useQueryClient();
 
-  // ── Data fetching ──────────────────────────────────────────────────────────
+  // ── Queries ────────────────────────────────────────────────────────────────
 
-  const getuserGridData = async () => {
-    setLoading(true);
-    try {
+  const { data: rows = [], isFetching: loading } = useQuery({
+    queryKey: ["custLogins", cust_id],
+    queryFn: async () => {
       const res = await getCustLogins(cust_id);
       const data = res?.items ?? [];
-      setRows(Array.isArray(data) ? data : []);
-      setFilteredRows(Array.isArray(data) ? data : []);
-    } catch (error) {
-      console.error("getCustLogins error:", error);
-      setRows([]);
-      setFilteredRows([]);
-    } finally {
-      setLoading(false);
-    }
-  };
+      return Array.isArray(data) ? data : [];
+    },
+  });
 
-  const getDepartments = async () => {
-    try {
+  const { data: departments = [] } = useQuery({
+    queryKey: ["custDepartments"],
+    queryFn: async () => {
       const res = await getCustDepartments();
-      setDepartments(res?.items ?? []);
-    } catch (error) {
-      console.error("getCustDepartments error:", error);
-    }
-  };
+      return res?.items ?? [];
+    },
+    staleTime: 5 * 60 * 1000,
+  });
 
-  useEffect(() => {
-    getuserGridData();
-    getDepartments();
-  }, []);
+  // ── Validation ────────────────────────────────────────────────────────────
 
-  // ── Validation ─────────────────────────────────────────────────────────────
-
-  const validateField = (field, value, updatedForm) => {
-    let msg = "";
-
+  const getFieldError = (field, value, form) => {
     switch (field) {
       case "department":
-        if (!value) msg = "Department is required";
+        if (!value) return "Department is required";
         break;
       case "name":
-        if (!value?.trim()) msg = "Name is required";
+        if (!value?.trim()) return "Name is required";
         break;
       case "username":
-        if (!value?.trim()) msg = "Username is required";
+        if (!value?.trim()) return "Username is required";
         break;
       case "email":
-        if (!value?.trim()) msg = "Email is required";
-        else if (!/\S+@\S+\.\S+/.test(value)) msg = "Enter a valid email";
+        if (!value?.trim()) return "Email is required";
+        if (!/\S+@\S+\.\S+/.test(value)) return "Enter a valid email";
         break;
       case "mobile": {
         const mob = String(value ?? "").trim();
-        if (!mob) {
-          msg = "Mobile is required";
-        } else if (!/^\d+$/.test(mob)) {
-          msg = "Mobile must contain numbers only";
-        } else if (mob.length !== 10) {
-          msg = "Mobile must be exactly 10 digits";
-        }
+        if (!mob) return "Mobile is required";
+        if (!/^\d+$/.test(mob)) return "Mobile must contain numbers only";
+        if (mob.length !== 10) return "Mobile must be exactly 10 digits";
         break;
       }
       case "password":
-        if (!value) {
-          msg = "Password is required";
-        } else if (value.length < 8) {
-          msg = "Password must be at least 8 characters";
-        } else if (!/[A-Z]/.test(value)) {
-          msg = "Password must contain at least 1 uppercase letter";
-        } else if (!/[a-z]/.test(value)) {
-          msg = "Password must contain at least 1 lowercase letter";
-        } else if (!/[0-9]/.test(value)) {
-          msg = "Password must contain at least 1 number";
-        } else if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(value)) {
-          msg = "Password must contain at least 1 special character";
-        }
-        if (
-          updatedForm?.confirmPassword &&
-          value !== updatedForm.confirmPassword
-        ) {
-          setErrors((e) => ({
-            ...e,
-            confirmPassword: "Passwords do not match",
-          }));
-        } else if (updatedForm?.confirmPassword) {
-          setErrors((e) => ({ ...e, confirmPassword: "" }));
-        }
+        if (!form.isEditing && !value) return "Password is required";
+        if (value && value.length < 8)
+          return "Password must be at least 8 characters";
         break;
       case "confirmPassword":
-        if (!value) msg = "Please confirm your password";
-        else if (value !== updatedForm?.password)
-          msg = "Passwords do not match";
+        if (!form.isEditing && !value) return "Please confirm your password";
+        if (value !== form.password) return "Passwords do not match";
         break;
       case "loginType":
-        if (!value) msg = "Login type is required";
+        if (!value) return "Login type is required";
         break;
       default:
         break;
     }
+    return "";
+  };
 
-    setErrors((e) => ({ ...e, [field]: msg }));
+  const validateField = (field, value, updatedForm) => {
+    const error = getFieldError(field, value, { ...updatedForm, isEditing });
+    setErrors((prev) => ({ ...prev, [field]: error }));
+  };
+
+  const validate = () => {
+    const newErrors = {};
+    Object.keys(form).forEach((field) => {
+      const error = getFieldError(field, form[field], { ...form, isEditing });
+      if (error) newErrors[field] = error;
+    });
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
   };
 
   const handleFieldChange = (field, value) => {
@@ -155,48 +131,12 @@ const UserCreation = () => {
     });
   };
 
-  const validate = () => {
-    const e = {};
-    if (!form.department) e.department = "Department is required";
-    if (!form.name.trim()) e.name = "Name is required";
-    if (!form.username.trim()) e.username = "Username is required";
-    if (!form.email.trim()) e.email = "Email is required";
-    else if (!/\S+@\S+\.\S+/.test(form.email)) e.email = "Enter a valid email";
-    const mobile = String(form.mobile ?? "").trim();
-    if (!mobile) {
-      e.mobile = "Mobile is required";
-    } else if (!/^\d+$/.test(mobile)) {
-      e.mobile = "Mobile must contain numbers only";
-    } else if (mobile.length !== 10) {
-      e.mobile = "Mobile must be exactly 10 digits";
-    }
-    if (!form.password) {
-      e.password = "Password is required";
-    } else if (form.password.length < 8) {
-      e.password = "Password must be at least 8 characters";
-    } else if (!/[A-Z]/.test(form.password)) {
-      e.password = "Password must contain at least 1 uppercase letter";
-    } else if (!/[a-z]/.test(form.password)) {
-      e.password = "Password must contain at least 1 lowercase letter";
-    } else if (!/[0-9]/.test(form.password)) {
-      e.password = "Password must contain at least 1 number";
-    } else if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(form.password)) {
-      e.password = "Password must contain at least 1 special character";
-    }
-    if (!form.confirmPassword)
-      e.confirmPassword = "Please confirm your password";
-    else if (form.password !== form.confirmPassword)
-      e.confirmPassword = "Passwords do not match";
-    if (!form.loginType) e.loginType = "Login type is required";
-    setErrors(e);
-    return Object.keys(e).length === 0;
-  };
-
-  // ── CRUD ───────────────────────────────────────────────────────────────────
+  // ── Handlers ──────────────────────────────────────────────────────────────
 
   const handleSave = async () => {
+    if (!validate()) return;
+    setFormLoading(true);
     try {
-      if (!validate()) return;
       const payload = {
         cust_id,
         cust_dept_id: form?.department?.CUST_DEPT_ID,
@@ -211,57 +151,20 @@ const UserCreation = () => {
       const res = await createCustUserLogin(payload);
       if (res?.Status === 1) {
         showPostSuccess("User Created Successfully");
-        getuserGridData();
+        queryClient.invalidateQueries({ queryKey: ["custLogins", cust_id] });
         handleReset();
       }
     } catch (error) {
       console.error("handleSave error:", error);
       const statusCode = error?.response?.status;
       const apiMessage = error?.response?.data?.message;
-      if (statusCode === 409 && apiMessage) {
+      if (statusCode === 409)
         showAlert("warning", "Already Exists", apiMessage);
-      } else if (statusCode === 400 && apiMessage) {
+      else if (statusCode === 400)
         showAlert("warning", "Validation Error", apiMessage);
-      } else {
-        showPostError(apiMessage || "User Creation Failed");
-      }
-    }
-  };
-
-  const handleUpdate = async () => {
-    try {
-      if (!validate()) return;
-      const payload = {
-        cust_login_id: form?.cust_login_id,
-        cust_id,
-        cust_dept_id: form?.department?.CUST_DEPT_ID,
-        cust_user_id: form?.username,
-        cust_password: form?.password,
-        name: form?.name,
-        email: form?.email,
-        login_type: form?.loginType?.value,
-        mobile: form?.mobile,
-        active: form?.active ? "Y" : "N",
-      };
-      const res = await updateCustUserLogin(payload);
-      if (res?.Status === 1) {
-        showPostSuccess("User Updated Successfully");
-        getuserGridData();
-        handleReset();
-      }
-    } catch (error) {
-      console.error("handleUpdate error:", error);
-      const statusCode = error?.response?.status;
-      const apiMessage = error?.response?.data?.message;
-      if (statusCode === 404) {
-        showAlert("warning", "User Not Found", apiMessage);
-      } else if (statusCode === 409) {
-        showAlert("warning", "Already Exists", apiMessage);
-      } else if (statusCode === 400) {
-        showAlert("warning", "Validation Error", apiMessage);
-      } else {
-        showPostError(apiMessage || "User Update Failed");
-      }
+      else showPostError(apiMessage || "User Creation Failed");
+    } finally {
+      setFormLoading(false);
     }
   };
 
@@ -275,12 +178,55 @@ const UserCreation = () => {
       username: row.CUST_USER_ID ?? "",
       email: row.EMAIL ?? "",
       mobile: String(row.MOBILE ?? ""),
-      password: row.CUST_PASSWORD ?? "",
-      confirmPassword: row.CUST_PASSWORD ?? "",
+      oldPassword: row.CUST_PASSWORD ?? "",
+      newPassword: "",
+      password: "",
+      confirmPassword: "",
       loginType: LOGIN_TYPES.find((l) => l.value === row.LOGIN_TYPE) ?? null,
       active: row.ACTIVE === "Y" || row.ACTIVE === 1,
     });
     setErrors({});
+  };
+
+  const handleUpdate = async () => {
+    if (!validate()) return;
+    setFormLoading(true);
+    try {
+      const payload = {
+        cust_login_id: form?.cust_login_id,
+        cust_id,
+        cust_dept_id: form?.department?.CUST_DEPT_ID,
+        cust_user_id: form?.username,
+        name: form?.name,
+        email: form?.email,
+        login_type: form?.loginType?.value,
+        mobile: form?.mobile,
+        active: form?.active ? "Y" : "N",
+        ...(form.newPassword?.trim() && {
+          old_password: form.oldPassword,
+          new_password: form.newPassword,
+        }),
+      };
+      const res = await updateCustUserLogin(payload);
+      if (res?.Status === 1) {
+        showPostSuccess("User Updated Successfully");
+        queryClient.invalidateQueries({ queryKey: ["custLogins", cust_id] });
+        handleReset();
+      }
+    } catch (error) {
+      console.error("handleUpdate error:", error);
+      const statusCode = error?.response?.status;
+      const apiMessage = error?.response?.data?.message;
+      if (statusCode === 404)
+        showAlert("warning", "User Not Found", apiMessage);
+      else if (statusCode === 409)
+        showAlert("warning", "Already Exists", apiMessage);
+      else if (statusCode === 400)
+        showAlert("warning", "Validation Error", apiMessage);
+      else showPostError(apiMessage || "User Update Failed");
+    } finally {
+      setFormLoading(false);
+    }
   };
 
   const handleReset = () => {
@@ -289,7 +235,7 @@ const UserCreation = () => {
     setErrors({});
   };
 
-  // ── Search ─────────────────────────────────────────────────────────────────
+  // ── Search ────────────────────────────────────────────────────────────────
 
   const handleSearchChange = (field, value) => {
     setSearch((s) => ({ ...s, [field]: value }));
@@ -297,27 +243,27 @@ const UserCreation = () => {
 
   const handleSearch = () => {
     let result = [...rows];
-    if (search.department) {
+    if (search.department)
       result = result.filter(
         (r) => r.CUST_DEPT_ID === search.department.CUST_DEPT_ID,
       );
-    }
-    if (search.name.trim()) {
+    if (search.name.trim())
       result = result.filter((r) =>
         r.NAME?.toLowerCase().includes(search.name.trim().toLowerCase()),
       );
-    }
     setFilteredRows(result);
     setPage(0);
   };
 
   const handleSearchReset = () => {
     setSearch({ department: null, name: "" });
-    setFilteredRows(rows);
+    setFilteredRows(null);
     setPage(0);
   };
 
-  // ── Render ─────────────────────────────────────────────────────────────────
+  // ── Render ────────────────────────────────────────────────────────────────
+
+  const displayRows = filteredRows ?? rows;
 
   return (
     <Box sx={{ p: 2.5, bgcolor: "grey.50" }}>
@@ -328,7 +274,6 @@ const UserCreation = () => {
       </Box>
 
       <Grid container spacing={2}>
-        {/* Form */}
         <Grid size={{ xs: 12, md: 4 }}>
           <UserCreationForm
             form={form}
@@ -341,17 +286,17 @@ const UserCreation = () => {
             setShowConfirmPassword={setShowConfirmPassword}
             onFieldChange={handleFieldChange}
             onSave={handleSave}
+            loading={formLoading}
             onUpdate={handleUpdate}
             onReset={handleReset}
           />
         </Grid>
 
-        {/* Table */}
         <Grid size={{ xs: 12, md: 8 }}>
           <UserCreationTable
             departments={departments}
             rows={rows}
-            filteredRows={filteredRows}
+            filteredRows={displayRows}
             loading={loading}
             search={search}
             page={page}

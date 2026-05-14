@@ -45,8 +45,11 @@ const create_customer = asyncHandler(async (req, res) => {
       .json(new ApiResponse(201, "Customer created successfully"));
 
   } catch (error) {
-    console.error(error);
-    throw new ApiError(500, "Internal server error");
+    throw new ApiError(
+      error.statusCode || 500,
+      error.message || "customer creation failed",
+      error
+    );
   }
 });
 
@@ -119,9 +122,29 @@ const delete_customer = asyncHandler(async (req, res) => {
       .json(new ApiResponse(200, "Customer deleted successfully"));
 
   } catch (error) {
-    console.error(error);
-    throw new ApiError(500, "Internal server error");
+  console.error(error);
+
+  
+  if (error?.errorNum === 1) {
+    
+    let message = "Duplicate record found!";
+
+    if (error.message.includes("UK_CUSTOMER_NAME")) {
+      message = "Customer Name already exists!";
+    } else if (error.message.includes("UK_CUSTOMER_PAN")) {
+      message = "PAN Number already exists!";
+    } else if (error.message.includes("UK_CUSTOMER_GST")) {
+      message = "GST Number already exists!";
+    }
+
+    return res.status(400).json({ Status: 0, message });
   }
+
+  return res.status(500).json({ 
+    Status: 0, 
+    message: error?.message || "Internal server error" 
+  });
+}
 });
 const get_customers = asyncHandler(async (req, res) => {
   try {

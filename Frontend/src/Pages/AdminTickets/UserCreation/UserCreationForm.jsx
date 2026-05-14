@@ -8,8 +8,10 @@ import {
   Box,
   Divider,
   Paper,
+  InputAdornment,
+  IconButton,
+  CircularProgress,
 } from "@mui/material";
-import { InputAdornment, IconButton } from "@mui/material";
 import Visibility from "@mui/icons-material/Visibility";
 import VisibilityOff from "@mui/icons-material/VisibilityOff";
 
@@ -17,6 +19,22 @@ const LOGIN_TYPES = [
   { value: "CU", label: "Customer" },
   { value: "SH", label: "Section Incharge" },
 ];
+
+const passwordAdornment = (show, toggle) => ({
+  input: {
+    endAdornment: (
+      <InputAdornment position="end">
+        <IconButton size="small" onClick={() => toggle((p) => !p)} edge="end">
+          {show ? (
+            <VisibilityOff fontSize="small" />
+          ) : (
+            <Visibility fontSize="small" />
+          )}
+        </IconButton>
+      </InputAdornment>
+    ),
+  },
+});
 
 const UserCreationForm = ({
   form,
@@ -29,6 +47,7 @@ const UserCreationForm = ({
   setShowConfirmPassword,
   onFieldChange,
   onSave,
+  formLoading,
   onUpdate,
   onReset,
 }) => {
@@ -114,73 +133,88 @@ const UserCreationForm = ({
               onChange={(e) => onFieldChange("mobile", e.target.value)}
               error={!!errors.mobile}
               helperText={errors.mobile || ""}
-              inputProps={{ maxLength: 10 }}
+              slotProps={{ htmlInput: { maxLength: 10 } }}
             />
           </Grid>
 
-          <Grid size={{ xs: 12 }}>
-            <TextField
-              fullWidth
-              size="small"
-              required
-              label="Password"
-              type={showPassword ? "text" : "password"}
-              placeholder="••••••••"
-              value={form.password}
-              onChange={(e) => onFieldChange("password", e.target.value)}
-              error={!!errors.password}
-              helperText={errors.password || ""}
-              InputProps={{
-                endAdornment: (
-                  <InputAdornment position="end">
-                    <IconButton
-                      size="small"
-                      onClick={() => setShowPassword((prev) => !prev)}
-                      edge="end"
-                    >
-                      {showPassword ? (
-                        <VisibilityOff fontSize="small" />
-                      ) : (
-                        <Visibility fontSize="small" />
-                      )}
-                    </IconButton>
-                  </InputAdornment>
-                ),
-              }}
-            />
-          </Grid>
+          {isEditing ? (
+            <>
+              <Grid size={{ xs: 12 }}>
+                <TextField
+                  fullWidth
+                  size="small"
+                  required
+                  label="Old Password"
+                  type={showPassword ? "text" : "password"}
+                  placeholder="Enter current password"
+                  value={form.oldPassword}
+                  onChange={(e) => onFieldChange("oldPassword", e.target.value)}
+                  error={!!errors.oldPassword}
+                  helperText={errors.oldPassword || ""}
+                  slotProps={passwordAdornment(showPassword, setShowPassword)}
+                />
+              </Grid>
 
-          <Grid size={{ xs: 12 }}>
-            <TextField
-              fullWidth
-              size="small"
-              required
-              label="Confirm password"
-              type={showConfirmPassword ? "text" : "password"}
-              placeholder="••••••••"
-              value={form.confirmPassword}
-              onChange={(e) => onFieldChange("confirmPassword", e.target.value)}
-              error={!!errors.confirmPassword}
-              helperText={errors.confirmPassword || ""}
-              InputProps={{
-                endAdornment: (
-                  <InputAdornment position="end">
-                    <IconButton
-                      size="small"
-                      onClick={() => setShowConfirmPassword((prev) => !prev)}
-                      edge="end"
-                    >
-                      {showConfirmPassword ? (
-                        <VisibilityOff fontSize="small" />
-                      ) : (
-                        <Visibility fontSize="small" />
-                      )}
-                    </IconButton>
-                  </InputAdornment>
-                ),
-              }}
-            />
-          </Grid>
+              <Grid size={{ xs: 12 }}>
+                <TextField
+                  fullWidth
+                  size="small"
+                  label="New Password"
+                  type={showConfirmPassword ? "text" : "password"}
+                  placeholder="Leave blank to keep current"
+                  value={form.newPassword}
+                  onChange={(e) => onFieldChange("newPassword", e.target.value)}
+                  error={!!errors.newPassword}
+                  helperText={
+                    errors.newPassword || "Leave blank to keep current password"
+                  }
+                  slotProps={passwordAdornment(
+                    showConfirmPassword,
+                    setShowConfirmPassword,
+                  )}
+                />
+              </Grid>
+            </>
+          ) : (
+            <>
+              <Grid size={{ xs: 12 }}>
+                <TextField
+                  fullWidth
+                  size="small"
+                  required
+                  label="Password"
+                  type={showPassword ? "text" : "password"}
+                  placeholder="••••••••"
+                  value={form.password}
+                  onChange={(e) => onFieldChange("password", e.target.value)}
+                  error={!!errors.password}
+                  helperText={errors.password || ""}
+                  slotProps={passwordAdornment(showPassword, setShowPassword)}
+                />
+              </Grid>
+
+              <Grid size={{ xs: 12 }}>
+                <TextField
+                  fullWidth
+                  size="small"
+                  required
+                  label="Confirm Password"
+                  type={showConfirmPassword ? "text" : "password"}
+                  placeholder="••••••••"
+                  value={form.confirmPassword}
+                  onChange={(e) =>
+                    onFieldChange("confirmPassword", e.target.value)
+                  }
+                  error={!!errors.confirmPassword}
+                  helperText={errors.confirmPassword || ""}
+                  slotProps={passwordAdornment(
+                    showConfirmPassword,
+                    setShowConfirmPassword,
+                  )}
+                />
+              </Grid>
+            </>
+          )}
 
           <Grid size={{ xs: 12 }}>
             <Autocomplete
@@ -255,8 +289,14 @@ const UserCreationForm = ({
           size="small"
           color={isEditing ? "success" : "primary"}
           onClick={isEditing ? onUpdate : onSave}
+          disabled={formLoading}
+          startIcon={
+            formLoading ? (
+              <CircularProgress size={14} sx={{ color: "inherit" }} />
+            ) : null
+          }
         >
-          {isEditing ? "Update" : "Save"}
+          {formLoading ? "Processing..." : isEditing ? "Update" : "Save"}
         </Button>
         <Button
           variant="contained"

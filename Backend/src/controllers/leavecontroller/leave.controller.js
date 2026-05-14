@@ -55,13 +55,13 @@ const apply_leave = asyncHandler(async (req, res) => {
 
 
 
-  const fromDate = new Date(req_leave_from);
-const toDate = new Date(req_leave_to);
+    const fromDate = new Date(req_leave_from);
+    const toDate = new Date(req_leave_to);
 
-const totalDays = Math.floor(
-  (Date.parse(req_leave_to) - Date.parse(req_leave_from)) /
-  (1000 * 60 * 60 * 24)
-) + 1;
+    const totalDays = Math.floor(
+      (Date.parse(req_leave_to) - Date.parse(req_leave_from)) /
+      (1000 * 60 * 60 * 24)
+    ) + 1;
 
     if (isNaN(totalDays) || totalDays <= 0) {
       return res.status(400).json(
@@ -124,7 +124,7 @@ const totalDays = Math.floor(
     /* ➕ CALCULATE EXCLUDED DAYS (SUNDAY / HOLIDAY) */
     const isEL = leaveName.toLowerCase().includes("earned");
 
-   let workingDays = isEL ? Number(no_of_days) : totalDays;
+    let workingDays = isEL ? Number(no_of_days) : totalDays;
     let decHolidayArr = [];
 
     if (!isEL) {
@@ -168,17 +168,17 @@ const totalDays = Math.floor(
           );
         }
       }
-      
+
     }
 
     const decHolidayValue =
       decHolidayArr.length > 0 ? decHolidayArr.join(",") : null;
-      /* 🚫 BLOCK EL IF RANGE HAS ONLY HOLIDAYS OR SUNDAYS */
+    /* 🚫 BLOCK EL IF RANGE HAS ONLY HOLIDAYS OR SUNDAYS */
 
-if (isEL) {
+    if (isEL) {
 
-  const workingCheck = await db.executeQuery(
-    `
+      const workingCheck = await db.executeQuery(
+        `
     SELECT COUNT(*) CNT
     FROM (
       SELECT TRUNC(TO_DATE(:FROM_DATE,'YYYY-MM-DD')) + LEVEL - 1 DT
@@ -196,24 +196,24 @@ if (isEL) {
         WHERE TRUNC(h.HOLIDAY_DATE) = DT
       )
     `,
-    {
-      FROM_DATE: req_leave_from,
-      TO_DATE: req_leave_to,
-    },
-    "siri_db"
-  );
+        {
+          FROM_DATE: req_leave_from,
+          TO_DATE: req_leave_to,
+        },
+        "siri_db"
+      );
 
-  if (workingCheck.rows[0].CNT === 0) {
-    return res.status(400).json(
-      new ApiResponse(
-        400,
-        null,
-        "Selected date range does not contain any working days"
-      )
-    );
-  }
-}
-      
+      if (workingCheck.rows[0].CNT === 0) {
+        return res.status(400).json(
+          new ApiResponse(
+            400,
+            null,
+            "Selected date range does not contain any working days"
+          )
+        );
+      }
+    }
+
     if (workingDays <= 0) {
       return res.status(400).json(
         new ApiResponse(
@@ -307,7 +307,7 @@ if (isEL) {
         LEAVE_ID: leave_id,
         FROM_DATE: req_leave_from,
         TO_DATE: req_leave_to,
-        NO_OF_DAYS: requestedDays,   
+        NO_OF_DAYS: requestedDays,
         DEC_HOLIDAYS: decHolidayValue,
         HALF_DAY: half_day,
         REASON: leave_reason,
@@ -342,7 +342,7 @@ if (isEL) {
     return res.status(200).json(
       new ApiResponse(200, {
         message: "Leave applied successfully",
-       no_of_days: requestedDays,
+        no_of_days: requestedDays,
         dec_holidays: decHolidayValue
       })
     );
@@ -351,7 +351,7 @@ if (isEL) {
     console.error(err);
 
     if (err instanceof ApiError) {
-      throw err; 
+      throw err;
     }
 
     throw new ApiError(500, "Apply leave failed");
@@ -621,14 +621,14 @@ const calculate_leave_days = asyncHandler(async (req, res) => {
 
   const db = new DatabaseHandler();
 
- const { from_date, to_date, leave_id, emp_id } = req.body;
+  const { from_date, to_date, leave_id, emp_id } = req.body;
 
 
-const employeeId = emp_id || req.user.emp_id;
+  const employeeId = emp_id || req.user.emp_id;
 
-if (!from_date || !to_date || !leave_id) {
-  throw new ApiError(400, "Missing required fields");
-}
+  if (!from_date || !to_date || !leave_id) {
+    throw new ApiError(400, "Missing required fields");
+  }
 
   /* 1️⃣ GET LEAVE TYPE */
 
@@ -724,7 +724,7 @@ if (!from_date || !to_date || !leave_id) {
       WHERE ROWNUM = 1
       `,
       {
-       EMP_ID: employeeId,
+        EMP_ID: employeeId,
         FROM_DATE: from_date
       },
       "siri_db"
@@ -775,15 +775,15 @@ if (!from_date || !to_date || !leave_id) {
       /* 6️⃣ IF NO WORKING DAY → ADD GAP */
 
       const prevDate = new Date(prevTo);
-const currDate = new Date(from_date);
+      const currDate = new Date(from_date);
 
-const gapDays =
-  Math.floor((currDate - prevDate) / (1000 * 60 * 60 * 24)) - 1;
+      const gapDays =
+        Math.floor((currDate - prevDate) / (1000 * 60 * 60 * 24)) - 1;
 
-if (gapDays > 0 && workingGapRes.rows[0].CNT === 0) {
+      if (gapDays > 0 && workingGapRes.rows[0].CNT === 0) {
 
-  const gapRes = await db.executeQuery(
-    `
+        const gapRes = await db.executeQuery(
+          `
     SELECT COUNT(*) CNT
     FROM (
       SELECT TRUNC(:PREV_TO) + LEVEL DT
@@ -794,16 +794,16 @@ if (gapDays > 0 && workingGapRes.rows[0].CNT === 0) {
       )
     )
     `,
-    {
-      PREV_TO: prevTo,
-      FROM_DATE: from_date
-    },
-    "siri_db"
-  );
+          {
+            PREV_TO: prevTo,
+            FROM_DATE: from_date
+          },
+          "siri_db"
+        );
 
-  totalDays += gapRes.rows[0].CNT;
+        totalDays += gapRes.rows[0].CNT;
 
-}
+      }
 
     }
 
@@ -1065,6 +1065,98 @@ const getTodayApprovedLeavesForAdmin = asyncHandler(async (req, res) => {
   );
 });
 
+const getEmployeeLeaveDetails = asyncHandler(async (req, res) => {
+
+  const { empId } = req.params;
+
+  // Current calendar year range (Oracle format)
+  const currentYear = new Date().getFullYear();
+  const yearStart = `01-JAN-${currentYear}`;
+  const yearEnd = `31-DEC-${currentYear}`;
+
+  const db = new DatabaseHandler();
+
+  const result = await db.executeQuery(
+    `
+    SELECT 
+  m.EMP_ID,
+  m.LEAVE_ID,
+  lm.LEAVE_NAME,
+  lm.SHORT_NAME,   
+  m.ALLOTED,
+  m.USED_LEAVE,
+  m.BAL_LEAVE,
+
+  d.EMP_LEAVE_DETAIL_ID,
+  d.REQ_LEAVE_FROM,
+  d.REQ_LEAVE_TO,
+  d.APPROVED_FROM,
+  d.APPROVED_TO,
+  d.NO_OF_DAYS,
+  d.STATUS
+
+    FROM EMP_LEAVE_MAST m
+
+    LEFT JOIN EMP_LEAVE_DETAIL d
+      ON m.EMP_ID = d.EMP_ID
+      AND m.LEAVE_ID = d.LEAVE_ID
+      AND (
+        d.REQ_LEAVE_FROM IS NULL
+        OR d.REQ_LEAVE_FROM BETWEEN TO_DATE(:yearStart, 'DD-MON-YYYY')
+                                AND TO_DATE(:yearEnd,   'DD-MON-YYYY')
+      )
+
+    JOIN LEAVE_MASTER lm
+      ON lm.LEAVE_ID = m.LEAVE_ID
+
+    WHERE m.EMP_ID = :empId
+
+    ORDER BY m.LEAVE_ID, d.REQ_LEAVE_FROM
+    `,
+    { empId, yearStart, yearEnd },
+    "siri_db"
+  );
+
+  // Format data
+  const grouped = {};
+
+  result.rows.forEach((row) => {
+    const leaveId = row.LEAVE_ID;
+
+    if (!grouped[leaveId]) {
+
+      grouped[leaveId] = {
+        leaveId: leaveId,
+        leaveName: row.LEAVE_NAME,
+        shortName: row.SHORT_NAME,
+        opening: row.ALLOTED,
+        used: row.USED_LEAVE,
+        closing: row.BAL_LEAVE,
+        availed: [],
+        availedCount: 0,
+      };
+
+    }
+
+    if (row.REQ_LEAVE_FROM || row.APPROVED_FROM) {
+      grouped[leaveId].availed.push({
+        from: row.APPROVED_FROM || row.REQ_LEAVE_FROM,
+        to: row.APPROVED_TO || row.REQ_LEAVE_TO,
+        days: row.NO_OF_DAYS,
+        status: row.STATUS,
+      });
+
+      // Count only approved
+      if (row.STATUS == 1) {
+        grouped[leaveId].availedCount += 1;
+      }
+    }
+  });
+
+  return res.status(200).json(
+    new ApiResponse(200, Object.values(grouped), "Leave details fetched successfully")
+  );
+});
 
 
 module.exports = {
@@ -1077,6 +1169,7 @@ module.exports = {
   previewLeaveDocument,
   get_employee_lop_days,
   check_leave_overlap,
-  getTodayApprovedLeavesForAdmin
+  getTodayApprovedLeavesForAdmin,
+  getEmployeeLeaveDetails
 
 }

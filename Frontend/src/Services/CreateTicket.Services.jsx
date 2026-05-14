@@ -18,5 +18,22 @@ let DeleteTicketDocByUser = async (ticket_doc_id) => {
   );
   return response.data;
 };
+const verifyTicket = async (ticket_id, remarks) => {
+  const response = await API.put(`${API_BASE_URL}/verify-ticket/${ticket_id}`, {
+    remarks,
+  });
+  return response.data;
+};
 
-export { CreateTickets, CategoryGridData, DeleteTicketDocByUser };
+const reopenTicket = async (ticket_id) => {
+  const response = await API.put(`${API_BASE_URL}/reopen-ticket/${ticket_id}`);
+  return response.data;
+};
+
+export {
+  CreateTickets,
+  CategoryGridData,
+  DeleteTicketDocByUser,
+  verifyTicket,
+  reopenTicket,
+};

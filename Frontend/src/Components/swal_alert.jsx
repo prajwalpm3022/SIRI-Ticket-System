@@ -14,7 +14,7 @@ export function showAlert(type, title, message, options = {}) {
 
   const defaultTimers = {
     success: 1500,
-    error: 2000, 
+    error: 2000,
     warning: 2500,
     info: 2000,
   };

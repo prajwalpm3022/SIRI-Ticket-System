@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import {
   Box,
   Typography,
@@ -21,7 +21,8 @@ import {
   Divider,
   Chip,
   CircularProgress,
-  TextField,
+  Skeleton,
+  Grid,
 } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
 import { useParams, useNavigate } from "react-router-dom";
@@ -37,6 +38,7 @@ import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
 import SearchIcon from "@mui/icons-material/Search";
 import FilterAltOffIcon from "@mui/icons-material/FilterAltOff";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
+import { useQuery } from "@tanstack/react-query";
 import {
   GetTickets,
   PreviewTicketDocument,
@@ -59,6 +61,7 @@ const STATUS_MAP = {
   11: { label: "Reassigned", color: "#ff7043" },
   12: { label: "Completed", color: "#4caf50" },
   13: { label: "Attachment Required", color: "#ec407a" },
+  14: { label: "Reopened", color: "#0e7886" },
 };
 
 const getStatusInfo = (statusId) => {
@@ -71,14 +74,13 @@ export default function OpenSectionHeadticket() {
   const navigate = useNavigate();
 
   const [tab, setTab] = useState(0);
-  const [tickets, setTickets] = useState([]);
-  const [loading, setLoading] = useState(false);
-
-  // Top filter bar (from/to date)
   const [fromDate, setFromDate] = useState(null);
   const [toDate, setToDate] = useState(null);
+  const [appliedFilters, setAppliedFilters] = useState({
+    from: null,
+    to: null,
+  });
 
-  // Tab-level date search (Open / Completed)
   const [selectedDate, setSelectedDate] = useState(null);
   const [searchDate, setSearchDate] = useState(null);
 
@@ -95,41 +97,31 @@ export default function OpenSectionHeadticket() {
   // Info dialog
   const [openInfoDialog, setOpenInfoDialog] = useState(false);
   const [selectedTicketInfo, setSelectedTicketInfo] = useState(null);
+  const cust_id = secureLocalStorage.getItem("USER_ID");
+  const cust_dept_id = secureLocalStorage.getItem("DEPT_ID");
+  // ─── React Query ───────────────────────────────────────────
+  const { data: tickets = [], isFetching: loading } = useQuery({
+    queryKey: ["sectionHeadTickets", appliedFilters],
+    queryFn: async () => {
+      const fromStr = appliedFilters.from
+        ? appliedFilters.from.format("YYYY-MM-DD")
+        : null;
+      const toStr = appliedFilters.to
+        ? appliedFilters.to.format("YYYY-MM-DD")
+        : null;
+      const res = await GetTickets(cust_id, cust_dept_id, null, fromStr, toStr);
+      return res?.items || [];
+    },
+  });
 
-  const fetchTickets = async (from = null, to = null) => {
-    try {
-      setLoading(true);
-      const cust_id = secureLocalStorage.getItem("USER_ID");
-      const cust_dept_id = secureLocalStorage.getItem("DEPT_ID");
-      const fromStr = from ? from.format("YYYY-MM-DD") : null;
-      const toStr = to ? to.format("YYYY-MM-DD") : null;
-      const response = await GetTickets(
-        cust_id,
-        cust_dept_id,
-        null,
-        fromStr,
-        toStr,
-      );
-      setTickets(response?.items || []);
-    } catch (error) {
-      console.error(error);
-    } finally {
-      setLoading(false);
-    }
+  const handleSearch = () => {
+    setAppliedFilters({ from: fromDate, to: toDate });
   };
 
-  useEffect(() => {
-    fetchTickets();
-  }, []);
-
-  const handleSearch = async () => {
-    await fetchTickets(fromDate, toDate);
-  };
-
-  const handleClearFilters = async () => {
+  const handleClearFilters = () => {
     setFromDate(null);
     setToDate(null);
-    await fetchTickets();
+    setAppliedFilters({ from: null, to: null });
   };
 
   // ─── Row mapping ───────────────────────────────────────────
@@ -152,9 +144,7 @@ export default function OpenSectionHeadticket() {
 
   const getRows = () => {
     let filtered = tickets.map(mapRow);
-
     if (tab === 0) {
-      // ✅ New — status 1,2,3,4 + pending (null)
       filtered = filtered.filter(
         (t) =>
           t.status === null ||
@@ -162,9 +152,8 @@ export default function OpenSectionHeadticket() {
           [1, 2, 3, 4].includes(t.status),
       );
     } else if (tab === 1) {
-      // ✅ Open — status 5,7,8,9,10,11,13
       filtered = filtered.filter((t) =>
-        [5, 7, 8, 9, 10, 11, 13].includes(t.status),
+        [5, 7, 8, 9, 10, 11, 13, 14].includes(t.status),
       );
       if (searchDate)
         filtered = filtered.filter(
@@ -173,7 +162,6 @@ export default function OpenSectionHeadticket() {
             dayjs(searchDate).format("YYYY-MM-DD"),
         );
     } else if (tab === 2) {
-      // ✅ Completed — status 6,12
       filtered = filtered.filter((t) => [6, 12].includes(t.status));
       if (searchDate)
         filtered = filtered.filter(
@@ -185,9 +173,7 @@ export default function OpenSectionHeadticket() {
     return filtered;
   };
 
-  // Tab counts
   const allRows = tickets.map(mapRow);
-
   const newCount = allRows.filter(
     (t) =>
       t.status === null ||
@@ -195,15 +181,11 @@ export default function OpenSectionHeadticket() {
       [1, 2, 3, 4].includes(t.status),
   ).length;
   const openCount = allRows.filter((t) =>
-    [5, 7, 8, 9, 10, 11, 13].includes(t.status),
+    [5, 7, 8, 9, 10, 11, 13, 14].includes(t.status),
   ).length;
   const completedCount = allRows.filter((t) =>
     [6, 12].includes(t.status),
   ).length;
-  const pendingCount = allRows.filter(
-    (t) => t.status === null || t.status === undefined,
-  ).length;
-
   const isFiltered = fromDate || toDate;
 
   // ─── Handlers ──────────────────────────────────────────────
@@ -238,7 +220,7 @@ export default function OpenSectionHeadticket() {
       setPreviewName(docName);
       setOpenDocsDialog(false);
       setOpenPreview(true);
-    } catch (error) {
+    } catch {
       Swal.fire({
         icon: "error",
         title: "Failed to preview document",
@@ -262,7 +244,9 @@ export default function OpenSectionHeadticket() {
   const handleProceed = (e, row) => {
     e.stopPropagation();
     const full = tickets.find((t) => t.TICKET_ID === row.id);
-    navigate(`/Drawer/UpdateTicket/${row.id}`, { state: { ticket: full } });
+    navigate(`/Drawer/UpdateTicket/${row.id}`, {
+      state: { ticket: full, viewOnly: tab === 1 },
+    });
   };
 
   // ─── Columns ───────────────────────────────────────────────
@@ -343,23 +327,33 @@ export default function OpenSectionHeadticket() {
     ),
   };
 
-  const infoActionColumn = {
+  const openProceedColumn = {
     field: "actions",
-    headerName: "Info",
-    width: 100,
+    headerName: "Actions",
+    width: 160,
     headerAlign: "center",
     align: "center",
     sortable: false,
     renderCell: (params) => (
-      <Tooltip title="View Ticket Info">
-        <IconButton
-          size="small"
-          onClick={(e) => handleOpenInfo(e, params.row)}
-          sx={{ color: "#6F60C1" }}
-        >
-          <InfoOutlinedIcon />
-        </IconButton>
-      </Tooltip>
+      <Button
+        variant="outlined"
+        size="small"
+        endIcon={<ArrowForwardIcon />}
+        sx={{
+          mt: 1,
+          color: "#6F60C1",
+          borderColor: "#6F60C1",
+          "&:hover": {
+            bgcolor: "rgba(111,96,193,0.06)",
+            borderColor: "#5a4daa",
+          },
+          textTransform: "none",
+          borderRadius: 2,
+        }}
+        onClick={(e) => handleProceed(e, params.row)}
+      >
+        View
+      </Button>
     ),
   };
 
@@ -388,11 +382,10 @@ export default function OpenSectionHeadticket() {
         params.value ? dayjs(params.value).format("DD-MMM-YYYY") : "-",
     },
     docsColumn,
-    //  tab 0 = New → Proceed, tab 1 = Open → Info only, tab 2 = Completed → nothing
     ...(tab === 0
       ? [proceedActionColumn]
       : tab === 1
-        ? [infoActionColumn]
+        ? [openProceedColumn]
         : []),
   ];
 
@@ -403,110 +396,134 @@ export default function OpenSectionHeadticket() {
       headerName: "Completed Date",
       width: 140,
       align: "center",
-      halign: "center",
       renderCell: (params) =>
         params.value ? dayjs(params.value).format("DD-MMM-YYYY") : "---",
     },
   ];
 
+  const skeletonCols = [
+    { width: 100, variant: "rectangular" },
+    { flex: 1, variant: "rectangular" },
+    { width: 140, variant: "rounded" },
+    { width: 120, variant: "rectangular" },
+    { width: 120, variant: "rectangular" },
+    { width: 44, variant: "rectangular" },
+    { width: 120, variant: "rounded" },
+  ];
+
   // ─── Render ────────────────────────────────────────────────
   return (
     <LocalizationProvider dateAdapter={AdapterDayjs}>
-      <Box sx={{ p: 3 }} bgcolor="#f6f7fb">
+      <Box sx={{ p: 2 }} bgcolor="#f6f7fb">
         <Box sx={{ display: "flex", justifyContent: "space-between" }}>
           <Typography variant="h5" fontWeight={600} mb={2}>
             {department?.replace(/_/g, " ")} TICKETS
           </Typography>
-          <Typography
-            color="#6F60C1"
-            sx={{ cursor: "pointer" }}
-            onClick={() => navigate(-1)}
-          >
-            ← Back
-          </Typography>
+          <IconButton onClick={() => navigate(-1)} size="small">
+            <ArrowBackIcon /> Back
+          </IconButton>
         </Box>
-        {/* ── Filter Bar ── */}
+
+        {/* Filter Bar */}
         <Paper
           elevation={0}
           sx={{
             p: 2,
-            mb: 3,
+            mb: 1,
             borderRadius: 3,
             border: "1px solid rgba(111, 96, 193, 0.15)",
             background: "rgba(111, 96, 193, 0.03)",
-            display: "flex",
-            flexWrap: "wrap",
-            gap: 2,
-            alignItems: "center",
           }}
         >
-          <DatePicker
-            label="Initiated Date From"
-            format="DD-MMM-YYYY"
-            value={fromDate}
-            onChange={(v) => setFromDate(v)}
-            maxDate={toDate || undefined}
-            slotProps={{ textField: { size: "small", sx: { minWidth: 160 } } }}
-          />
-          <DatePicker
-            label="Initiated Date To"
-            format="DD-MMM-YYYY"
-            value={toDate}
-            onChange={(v) => setToDate(v)}
-            minDate={fromDate || undefined}
-            slotProps={{ textField: { size: "small", sx: { minWidth: 160 } } }}
-          />
-
-          <Button
-            variant="contained"
-            onClick={handleSearch}
-            disabled={loading}
-            startIcon={
-              loading ? (
-                <CircularProgress size={16} sx={{ color: "#fff" }} />
-              ) : (
-                <SearchIcon />
-              )
-            }
-            sx={{
-              background: "linear-gradient(135deg, #6F60C1, #8f7df0)",
-              borderRadius: 2,
-              px: 3,
-              textTransform: "none",
-              fontWeight: 600,
-              boxShadow: "0 4px 12px rgba(111,96,193,0.3)",
-              "&:hover": {
-                background: "linear-gradient(135deg, #5d4fb0, #7b6be0)",
-              },
-            }}
-          >
-            {loading ? "Searching..." : "Search"}
-          </Button>
-          {isFiltered && (
-            <Tooltip title="Clear filters">
-              <IconButton
-                onClick={handleClearFilters}
-                size="small"
-                sx={{ color: "#6F60C1" }}
+          <Grid container spacing={2} alignItems="center">
+            <Grid size={{ xs: 12, sm: 6, md: "auto" }}>
+              <DatePicker
+                label="Initiated Date From"
+                format="DD-MMM-YYYY"
+                value={fromDate}
+                onChange={setFromDate}
+                maxDate={toDate || undefined}
+                slotProps={{
+                  textField: { size: "small", sx: { width: "100%" } },
+                }}
+              />
+            </Grid>
+            <Grid size={{ xs: 12, sm: 6, md: "auto" }}>
+              <DatePicker
+                label="Initiated Date To"
+                format="DD-MMM-YYYY"
+                value={toDate}
+                onChange={setToDate}
+                minDate={fromDate || undefined}
+                slotProps={{
+                  textField: { size: "small", sx: { width: "100%" } },
+                }}
+              />
+            </Grid>
+            <Grid
+              size={{ xs: 12, md: "auto" }}
+              sx={{
+                display: "flex",
+                gap: 1,
+                justifyContent: { xs: "flex-end", md: "flex-start" },
+              }}
+            >
+              <Button
+                variant="contained"
+                onClick={handleSearch}
+                disabled={loading}
+                startIcon={
+                  loading ? (
+                    <CircularProgress size={16} sx={{ color: "#fff" }} />
+                  ) : (
+                    <SearchIcon />
+                  )
+                }
+                sx={{
+                  background: "linear-gradient(135deg, #6F60C1, #8f7df0)",
+                  borderRadius: 2,
+                  px: 3,
+                  textTransform: "none",
+                  fontWeight: 600,
+                  boxShadow: "0 4px 12px rgba(111,96,193,0.3)",
+                  "&:hover": {
+                    background: "linear-gradient(135deg, #5d4fb0, #7b6be0)",
+                  },
+                }}
               >
-                <FilterAltOffIcon />
-              </IconButton>
-            </Tooltip>
-          )}
-          <Typography
-            variant="body2"
-            color="text.secondary"
-            sx={{ ml: "auto" }}
-          >
-            {tickets.length} ticket{tickets.length !== 1 ? "s" : ""}
-          </Typography>
+                {loading ? "Searching..." : "Search"}
+              </Button>
+              {isFiltered && (
+                <Tooltip title="Clear filters">
+                  <IconButton
+                    onClick={handleClearFilters}
+                    size="small"
+                    sx={{ color: "#6F60C1" }}
+                  >
+                    <FilterAltOffIcon />
+                  </IconButton>
+                </Tooltip>
+              )}
+            </Grid>
+            <Grid
+              size={{ xs: 12, md: "auto" }}
+              sx={{
+                ml: { md: "auto" },
+                display: "flex",
+                justifyContent: "flex-end",
+              }}
+            >
+              <Typography variant="body2" color="text.secondary">
+                {tickets.length} ticket{tickets.length !== 1 ? "s" : ""}
+              </Typography>
+            </Grid>
+          </Grid>
         </Paper>
 
         <Card sx={{ borderRadius: 3, p: 2, boxShadow: 4 }}>
-          {/* Tabs with counts */}
           <Tabs
             value={tab}
-            onChange={(e, v) => {
+            onChange={(_, v) => {
               setTab(v);
               setSelectedDate(null);
               setSearchDate(null);
@@ -554,17 +571,65 @@ export default function OpenSectionHeadticket() {
             />
           </Tabs>
 
-          {/* Tab-level date filter (Open / Completed) */}
-
           <Paper sx={{ height: 450, mt: 2 }}>
             {loading ? (
-              <Box
-                display="flex"
-                justifyContent="center"
-                alignItems="center"
-                height="100%"
-              >
-                <CircularProgress sx={{ color: "#6F60C1" }} />
+              <Box sx={{ p: 2 }}>
+                <Box
+                  sx={{
+                    bgcolor: "rgba(0,0,0,0.04)",
+                    borderRadius: 1,
+                    px: 0,
+                    py: 0.5,
+                    mb: 1,
+                  }}
+                >
+                  <Box
+                    sx={{
+                      display: "flex",
+                      gap: 2,
+                      mb: 1,
+                      alignItems: "center",
+                    }}
+                  >
+                    {skeletonCols.map((col, i) => (
+                      <Skeleton
+                        key={i}
+                        variant={col.variant}
+                        width={col.width}
+                        height={20}
+                        sx={{
+                          borderRadius: col.variant === "rounded" ? 2 : 1,
+                          ...(col.flex ? { flex: col.flex } : {}),
+                        }}
+                      />
+                    ))}
+                  </Box>
+                </Box>
+                {Array.from({ length: 7 }).map((_, i) => (
+                  <Box
+                    key={i}
+                    sx={{
+                      display: "flex",
+                      gap: 2,
+                      mb: 1,
+                      alignItems: "center",
+                      opacity: 1 - i * 0.1,
+                    }}
+                  >
+                    {skeletonCols.map((col, j) => (
+                      <Skeleton
+                        key={j}
+                        variant={col.variant}
+                        width={col.width}
+                        height={22}
+                        sx={{
+                          borderRadius: col.variant === "rounded" ? 2 : 1,
+                          ...(col.flex ? { flex: col.flex } : {}),
+                        }}
+                      />
+                    ))}
+                  </Box>
+                ))}
               </Box>
             ) : (
               <DataGrid
@@ -578,7 +643,7 @@ export default function OpenSectionHeadticket() {
         </Card>
       </Box>
 
-      {/* ── Docs Dialog ── */}
+      {/* Docs Dialog */}
       <Dialog
         open={openDocsDialog}
         onClose={() => setOpenDocsDialog(false)}
@@ -653,7 +718,7 @@ export default function OpenSectionHeadticket() {
         </DialogContent>
       </Dialog>
 
-      {/* ── Preview Dialog ── */}
+      {/* Preview Dialog */}
       <Dialog
         open={openPreview}
         onClose={handleClosePreview}
@@ -697,7 +762,7 @@ export default function OpenSectionHeadticket() {
         </DialogActions>
       </Dialog>
 
-      {/* ── Info Dialog ── */}
+      {/* Info Dialog */}
       <Dialog
         open={openInfoDialog}
         onClose={() => setOpenInfoDialog(false)}

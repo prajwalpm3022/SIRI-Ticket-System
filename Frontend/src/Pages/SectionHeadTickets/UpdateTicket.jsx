@@ -17,18 +17,16 @@ import {
   Dialog,
   DialogTitle,
   DialogContent,
-  Drawer,
   Divider,
-  Avatar,
 } from "@mui/material";
 import { LocalizationProvider, DatePicker } from "@mui/x-date-pickers";
 import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
 import DeleteIcon from "@mui/icons-material/Delete";
+import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import VisibilityIcon from "@mui/icons-material/Visibility";
 import InsertDriveFileIcon from "@mui/icons-material/InsertDriveFile";
 import CloseIcon from "@mui/icons-material/Close";
 import ChatIcon from "@mui/icons-material/Chat";
-import SendIcon from "@mui/icons-material/Send";
 import dayjs from "dayjs";
 import Swal from "sweetalert2";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
@@ -39,6 +37,9 @@ import {
   DeleteTicketDoc,
 } from "../../Services/AdminDashBoard.services";
 import secureLocalStorage from "react-secure-storage";
+import TicketChat from "../TicketChat/TicketChat";
+import CircularBubbleLoading from "../../Components/loading";
+
 const STATUS_MAP = {
   null: { label: "Pending", bg: "#fff3e0", color: "#e65100" },
   1: { label: "Under Review", bg: "#e8eaf6", color: "#3949ab" },
@@ -54,6 +55,7 @@ const STATUS_MAP = {
   11: { label: "Reassigned", bg: "#fbe9e7", color: "#bf360c" },
   12: { label: "Completed", bg: "#e3f2fd", color: "#1565c0" },
   13: { label: "Attachment Required", bg: "#fce4ec", color: "#ad1457" },
+  14: { label: "Reopened", bg: "#e0f7fa", color: "#0097a7" },
 };
 
 const getStatusStyle = (statusId) => {
@@ -68,60 +70,38 @@ const UpdateTicket = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const ticket = location.state?.ticket;
+  const viewOnly = location.state?.viewOnly ?? false;
 
-  // Editable state
+  // ── Editable state ────────────────────────────────────────────────
   const [description, setDescription] = useState(ticket?.DESCRIPTION || "");
   const [expDate, setExpDate] = useState(
     ticket?.CLI_EXCOMP_DATE ? dayjs(ticket.CLI_EXCOMP_DATE) : null,
   );
   const [errors, setErrors] = useState({});
 
-  // Docs
+  // ── Docs ──────────────────────────────────────────────────────────
   const [existingDocs, setExistingDocs] = useState(ticket?.DOCS || []);
   const [newDocs, setNewDocs] = useState([]);
   const [docsToDelete, setDocsToDelete] = useState([]);
 
-  // Preview dialog
+  // ── Preview dialog ────────────────────────────────────────────────
   const [openPreview, setOpenPreview] = useState(false);
   const [previewUrl, setPreviewUrl] = useState("");
   const [previewName, setPreviewName] = useState("");
 
-  // Chat drawer
+  // ── Chat drawer ───────────────────────────────────────────────────
   const [chatOpen, setChatOpen] = useState(false);
-  const [chatMessages, setChatMessages] = useState([]);
-  const [message, setMessage] = useState("");
-  const chatEndRef = useRef(null);
-
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const currentUserType = secureLocalStorage.getItem("LOGIN_TYPE");
   const fileInputRef = useRef();
 
-  // ─── Chat handlers ────────────────────────────────────────────────
-  const handleSend = () => {
-    if (!message.trim()) return;
-    const newMsg = {
-      sender: "user",
-      text: message.trim(),
-      time: dayjs().format("hh:mm A"),
-    };
-    setChatMessages((prev) => [...prev, newMsg]);
-    setMessage("");
-    setTimeout(() => {
-      setChatMessages((prev) => [
-        ...prev,
-        {
-          sender: "engineer",
-          text: "Engineer is reviewing your message.",
-          time: dayjs().format("hh:mm A"),
-        },
-      ]);
-      chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    }, 1000);
-    setTimeout(
-      () => chatEndRef.current?.scrollIntoView({ behavior: "smooth" }),
-      50,
-    );
-  };
+  const {
+    label: statusLabel,
+    bg: statusBg,
+    color: statusColor,
+  } = getStatusStyle(ticket?.STATUS_ID);
 
-  // ─── File handlers ────────────────────────────────────────────────
+  // ── File handlers ─────────────────────────────────────────────────
   const handleFileChange = (e) => {
     const files = Array.from(e.target.files);
     const maxSize = 2 * 1024 * 1024;
@@ -185,7 +165,7 @@ const UpdateTicket = () => {
     setNewDocs((prev) => prev.filter((d) => d.tempId !== tempId));
   };
 
-  // ─── Preview handlers ─────────────────────────────────────────────
+  // ── Preview handlers ──────────────────────────────────────────────
   const handlePreviewExisting = async (docId, docName) => {
     try {
       const res = await PreviewTicketDocument(docId);
@@ -225,7 +205,7 @@ const UpdateTicket = () => {
     setPreviewUrl("");
   };
 
-  // ─── Action handlers ──────────────────────────────────────────────
+  // ── Action handlers ───────────────────────────────────────────────
   const handleUpdate = async () => {
     const newErrors = {};
     if (!description.trim()) newErrors.description = "Description is required";
@@ -234,7 +214,9 @@ const UpdateTicket = () => {
       setErrors(newErrors);
       return;
     }
-    let docUploader = secureLocalStorage.getItem("CUST_LOGIN_ID");
+
+    const docUploader = secureLocalStorage.getItem("CUST_LOGIN_ID");
+    setIsSubmitting(true);
     try {
       const formData = new FormData();
       formData.append("DESCRIPTION", description);
@@ -242,7 +224,8 @@ const UpdateTicket = () => {
       if (newDocs.length > 0)
         newDocs.forEach((d) => formData.append("documents", d.file));
       formData.append("DOC_UPLOADER", docUploader);
-      let res = await UpdateUserTicket(id, formData);
+
+      const res = await UpdateUserTicket(id, formData);
       if (res?.Status === 1) {
         Swal.fire({
           icon: "success",
@@ -259,6 +242,8 @@ const UpdateTicket = () => {
         showConfirmButton: false,
         timer: 1500,
       });
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -297,6 +282,7 @@ const UpdateTicket = () => {
   const handleAccept = async () => {
     try {
       const res = await UpdateTicketStatus({ ticket_id: id, action: "accept" });
+
       if (res?.Status === 1)
         Swal.fire({
           icon: "success",
@@ -358,578 +344,451 @@ const UpdateTicket = () => {
     ...newDocs.map((d) => ({ ...d, isNew: true })),
   ];
 
-  const {
-    label: statusLabel,
-    bg: statusBg,
-    color: statusColor,
-  } = getStatusStyle(ticket?.STATUS_ID);
-
+  // ── Render ────────────────────────────────────────────────────────
   return (
-    <LocalizationProvider dateAdapter={AdapterDayjs}>
-      <Box sx={{ p: 2 }}>
-        {/* ── Header row: back+title LEFT, chat btn RIGHT ── */}
-        <Box
-          display="flex"
-          alignItems="center"
-          justifyContent="space-between"
-          mb={2}
-        >
-          <Box display="flex" alignItems="center" gap={1}>
-            <Typography
-              color="#6F60C1"
-              sx={{ cursor: "pointer", fontSize: "28px", lineHeight: 1 }}
-              onClick={() => navigate(-1)}
-            >
-              ←
-            </Typography>
-            <Typography variant="h5" fontWeight={700}>
-              Update Ticket
-            </Typography>
-          </Box>
-
-          <Button
-            variant="contained"
-            startIcon={<ChatIcon />}
-            onClick={() => setChatOpen(true)}
-            sx={{
-              background: "linear-gradient(135deg, #6F60C1, #8f7df0)",
-              borderRadius: 2,
-              textTransform: "none",
-              fontWeight: 600,
-              boxShadow: "0 4px 12px rgba(111,96,193,0.3)",
-              "&:hover": {
-                background: "linear-gradient(135deg, #5d4fb0, #7b6be0)",
-              },
-            }}
-          >
-            Chat with Engineer
-          </Button>
-        </Box>
-
-        <Grid container spacing={2}>
-          {/* ── LEFT: Read-only info panel ── */}
-          <Grid size={{ xs: 12, md: 6 }}>
-            <Paper sx={{ p: 2, borderRadius: 3, height: 542 }}>
-              <Box
-                sx={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 1,
-                  mb: 2,
-                  px: 1,
-                  py: 0.8,
-                  bgcolor: "#f0f4ff",
-                  borderRadius: 2,
-                  border: "1px solid #d0d8f0",
-                }}
-              >
-                <Typography
-                  variant="body2"
-                  color="text.secondary"
-                  fontWeight={600}
-                >
-                  Ticket ID:
-                </Typography>
-                <Typography variant="body2" fontWeight={700}>
-                  #{ticket?.TICKET_ID}
-                </Typography>
-              </Box>
-
-              <Paper variant="outlined" sx={{ borderRadius: 2, mb: 2 }}>
-                <Box sx={{ display: "flex", px: 1.5, py: 1 }}>
-                  <Box
-                    sx={{
-                      width: "50%",
-                      color: "text.secondary",
-                      fontWeight: 600,
-                    }}
-                  >
-                    Title
-                  </Box>
-                  <Box sx={{ width: "70%" }}>
-                    <Typography variant="body1">
-                      {ticket?.TITLE || "—"}
-                    </Typography>
-                  </Box>
-                </Box>
-              </Paper>
-
-              <TableContainer
-                component={Paper}
-                variant="outlined"
-                sx={{ borderRadius: 2 }}
-              >
-                <Table size="small">
-                  <TableBody>
-                    <TableRow>
-                      <TableCell
-                        sx={{ color: "text.secondary", fontWeight: 600 }}
-                      >
-                        Status
-                      </TableCell>
-                      <TableCell>
-                        <Typography
-                          variant="body2"
-                          sx={{
-                            display: "inline-block",
-                            px: 1.5,
-                            py: 0.3,
-                            borderRadius: 2,
-                            fontWeight: 600,
-                            fontSize: 12,
-                            bgcolor: statusBg,
-                            color: statusColor,
-                          }}
-                        >
-                          {statusLabel}
-                        </Typography>
-                      </TableCell>
-                    </TableRow>
-                    <TableRow>
-                      <TableCell
-                        sx={{ color: "text.secondary", fontWeight: 600 }}
-                      >
-                        Department
-                      </TableCell>
-                      <TableCell>{ticket?.CUST_DEPT_NAME || "—"}</TableCell>
-                    </TableRow>
-                    <TableRow>
-                      <TableCell
-                        sx={{ color: "text.secondary", fontWeight: 600 }}
-                      >
-                        Created On
-                      </TableCell>
-                      <TableCell>
-                        {ticket?.CREATED_AT
-                          ? dayjs(ticket.CREATED_AT).format("DD-MMM-YYYY")
-                          : "—"}
-                        {ticket?.CREATED_TIME
-                          ? ` · ${ticket.CREATED_TIME}`
-                          : ""}
-                      </TableCell>
-                    </TableRow>
-                    <TableRow>
-                      <TableCell
-                        sx={{ color: "text.secondary", fontWeight: 600 }}
-                      >
-                        Assigned Date
-                      </TableCell>
-                      <TableCell>
-                        {ticket?.ASSIGNED_DATE
-                          ? dayjs(ticket.ASSIGNED_DATE).format("DD-MMM-YYYY")
-                          : "—"}
-                      </TableCell>
-                    </TableRow>
-                  </TableBody>
-                </Table>
-              </TableContainer>
-            </Paper>
-          </Grid>
-
-          {/* ── RIGHT: Editable fields ── */}
-          <Grid size={{ xs: 12, md: 6 }}>
-            <Paper
-              sx={{ p: 2, borderRadius: 3, height: 227, overflow: "auto" }}
-            >
-              <TextField
-                fullWidth
-                multiline
-                size="small"
-                rows={7}
-                label="Ticket Description"
-                value={description}
-                onChange={(e) => {
-                  setDescription(e.target.value);
-                  if (e.target.value.trim())
-                    setErrors((p) => ({ ...p, description: "" }));
-                }}
-                error={!!errors.description}
-                helperText={errors.description}
-              />
-            </Paper>
-
-            <Paper sx={{ p: 3, borderRadius: 3, mt: 1, height: "300px" }}>
-              <Grid container spacing={2}>
-                <Grid size={{ xs: 12, md: 4 }}>
-                  <DatePicker
-                    label="Exp Completion Date"
-                    format="DD-MMM-YYYY"
-                    value={expDate}
-                    onChange={(val) => {
-                      setExpDate(val);
-                      if (val) setErrors((p) => ({ ...p, expDate: "" }));
-                    }}
-                    sx={{ mb: 1 }}
-                    slotProps={{
-                      textField: {
-                        fullWidth: true,
-                        size: "small",
-                        error: !!errors.expDate,
-                        helperText: errors.expDate,
-                      },
-                    }}
-                  />
-                  <Typography fontWeight={600} mb={2} textAlign="center">
-                    Attach Documents
-                  </Typography>
-                  <input
-                    hidden
-                    type="file"
-                    multiple
-                    ref={fileInputRef}
-                    accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.csv,.xls,.xlsx"
-                    onChange={handleFileChange}
-                  />
-                  <Button
-                    fullWidth
-                    variant="contained"
-                    size="small"
-                    sx={{ mb: 2 }}
-                    onClick={() => fileInputRef.current?.click()}
-                  >
-                    Browse Files
-                  </Button>
-                </Grid>
-
-                <Grid size={{ xs: 12, md: 8 }}>
-                  <TableContainer sx={{ maxHeight: 275 }}>
-                    <Table size="small" stickyHeader>
-                      <TableHead>
-                        <TableRow>
-                          <TableCell width="10%">No</TableCell>
-                          <TableCell>Attachment Name</TableCell>
-                          <TableCell width="25%" align="center">
-                            Action
-                          </TableCell>
-                        </TableRow>
-                      </TableHead>
-                      <TableBody>
-                        {allDocs.length === 0 ? (
-                          <TableRow>
-                            <TableCell colSpan={3} align="center">
-                              No attachments added
-                            </TableCell>
-                          </TableRow>
-                        ) : (
-                          allDocs.map((doc, idx) => (
-                            <TableRow
-                              key={doc.isNew ? doc.tempId : doc.TICKET_DOC_ID}
-                              hover
-                            >
-                              <TableCell>{idx + 1}</TableCell>
-                              <TableCell
-                                sx={{
-                                  maxWidth: 160,
-                                  whiteSpace: "nowrap",
-                                  overflow: "hidden",
-                                  textOverflow: "ellipsis",
-                                }}
-                              >
-                                <Box
-                                  display="flex"
-                                  alignItems="center"
-                                  gap={0.5}
-                                >
-                                  <InsertDriveFileIcon
-                                    fontSize="small"
-                                    color={doc.isNew ? "success" : "action"}
-                                  />
-                                  <Typography variant="body2" noWrap>
-                                    {doc.isNew ? doc.name : doc.DOC_NAME}
-                                  </Typography>
-                                  {doc.isNew && (
-                                    <Typography
-                                      variant="caption"
-                                      sx={{
-                                        bgcolor: "#e8f5e9",
-                                        color: "#2e7d32",
-                                        px: 0.6,
-                                        py: 0.1,
-                                        borderRadius: 1,
-                                        fontWeight: 700,
-                                        fontSize: 10,
-                                        flexShrink: 0,
-                                      }}
-                                    >
-                                      NEW
-                                    </Typography>
-                                  )}
-                                </Box>
-                              </TableCell>
-                              <TableCell align="center">
-                                <Box display="flex" justifyContent="center">
-                                  <Tooltip title="Preview">
-                                    <IconButton
-                                      size="small"
-                                      color="primary"
-                                      onClick={() =>
-                                        doc.isNew
-                                          ? handlePreviewNew(doc)
-                                          : handlePreviewExisting(
-                                              doc.TICKET_DOC_ID,
-                                              doc.DOC_NAME,
-                                            )
-                                      }
-                                    >
-                                      <VisibilityIcon fontSize="small" />
-                                    </IconButton>
-                                  </Tooltip>
-                                  {ticket?.STATUS_ID === 1 && (
-                                    <Tooltip title="Delete">
-                                      <IconButton
-                                        size="small"
-                                        color="error"
-                                        onClick={() =>
-                                          doc.isNew
-                                            ? handleRemoveNew(doc.tempId)
-                                            : handleDelete(doc)
-                                        }
-                                      >
-                                        <DeleteIcon fontSize="small" />
-                                      </IconButton>
-                                    </Tooltip>
-                                  )}
-                                </Box>
-                              </TableCell>
-                            </TableRow>
-                          ))
-                        )}
-                      </TableBody>
-                    </Table>
-                  </TableContainer>
-                </Grid>
-              </Grid>
-            </Paper>
-          </Grid>
-
-          {/* ── Action Buttons ── */}
-          <Grid size={{ xs: 12 }}>
-            {ticket?.STATUS_ID === 1 && (
-              <Box display="flex" justifyContent="flex-end" gap={2}>
-                <Button
-                  variant="contained"
-                  color="success"
-                  onClick={handleAccept}
-                >
-                  Accept
-                </Button>
-                <Button
-                  variant="contained"
-                  color="error"
-                  onClick={handleReject}
-                >
-                  Reject
-                </Button>
-                <Button
-                  variant="contained"
-                  color="primary"
-                  onClick={handleUpdate}
-                >
-                  Update Ticket
-                </Button>
-              </Box>
-            )}
-          </Grid>
-        </Grid>
-      </Box>
-
-      {/* ── Preview Dialog ── */}
-      <Dialog
-        open={openPreview}
-        onClose={handleClosePreview}
-        maxWidth="md"
-        fullWidth
-      >
-        <DialogTitle>
+    <>
+      <CircularBubbleLoading
+        isLoading={isSubmitting}
+        messages={[
+          "Processing your Ticket...",
+          "Uploading files...",
+          "Saving changes...",
+          "Almost there...",
+          "Hang tight...",
+        ]}
+      />
+      <LocalizationProvider dateAdapter={AdapterDayjs}>
+        <Box sx={{ p: 2 }}>
+          {/* ── Header ── */}
           <Box
             display="flex"
             alignItems="center"
             justifyContent="space-between"
+            mb={2}
           >
             <Box display="flex" alignItems="center" gap={1}>
-              <InsertDriveFileIcon color="primary" />
-              <Typography fontWeight={700}>{previewName}</Typography>
+              <IconButton onClick={() => navigate(-1)} size="small">
+                <ArrowBackIcon />
+              </IconButton>
+              <Typography variant="h5" fontWeight={700}>
+                {viewOnly ? "View Ticket" : "Update Ticket"}
+              </Typography>
             </Box>
-            <IconButton onClick={handleClosePreview} size="small">
-              <CloseIcon />
-            </IconButton>
-          </Box>
-        </DialogTitle>
-        <DialogContent dividers sx={{ p: 0, height: "75vh" }}>
-          {previewUrl && (
-            <iframe
-              src={previewUrl}
-              width="100%"
-              height="100%"
-              style={{ border: "none" }}
-              title={previewName}
-            />
-          )}
-        </DialogContent>
-      </Dialog>
 
-      {/* ── Chat Drawer ── */}
-      <Drawer anchor="right" open={chatOpen} onClose={() => setChatOpen(false)}>
-        <Box
-          sx={{
-            width: 380,
-            display: "flex",
-            flexDirection: "column",
-            height: "100%",
-          }}
-        >
-          {/* Drawer header */}
-          <Box
-            sx={{
-              px: 2,
-              py: 1.5,
-              background: "linear-gradient(135deg, #6F60C1, #8f7df0)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-            }}
-          >
-            <Box display="flex" alignItems="center" gap={1}>
-              <ChatIcon sx={{ color: "#fff" }} />
-              <Box>
-                <Typography fontWeight={700} color="#fff" fontSize="0.95rem">
-                  Chat with Engineer
-                </Typography>
-                <Typography fontSize="0.72rem" color="rgba(255,255,255,0.8)">
-                  Ticket #{ticket?.TICKET_ID} · {ticket?.TITLE}
-                </Typography>
-              </Box>
-            </Box>
-            <IconButton
-              onClick={() => setChatOpen(false)}
-              size="small"
-              sx={{ color: "#fff" }}
+            <Button
+              variant="contained"
+              startIcon={<ChatIcon />}
+              onClick={() => setChatOpen(true)}
+              sx={{
+                background: "linear-gradient(135deg, #6F60C1, #8f7df0)",
+                borderRadius: 2,
+                textTransform: "none",
+                fontWeight: 600,
+                boxShadow: "0 4px 12px rgba(111,96,193,0.3)",
+                "&:hover": {
+                  background: "linear-gradient(135deg, #5d4fb0, #7b6be0)",
+                },
+              }}
             >
-              <CloseIcon />
-            </IconButton>
+              Chat with Engineer
+            </Button>
           </Box>
 
-          <Divider />
-
-          {/* Messages area */}
-          <Box
-            sx={{
-              flexGrow: 1,
-              overflowY: "auto",
-              p: 2,
-              display: "flex",
-              flexDirection: "column",
-              gap: 1.5,
-              bgcolor: "#f5f5f5",
-            }}
-          >
-            {chatMessages.length === 0 ? (
-              <Box
-                display="flex"
-                flexDirection="column"
-                alignItems="center"
-                justifyContent="center"
-                height="100%"
-                gap={1}
-                color="text.secondary"
-              >
-                <ChatIcon sx={{ fontSize: 48, opacity: 0.3 }} />
-                <Typography variant="body2">
-                  Start a conversation with the engineer
-                </Typography>
-              </Box>
-            ) : (
-              chatMessages.map((msg, idx) => (
+          <Grid container spacing={2}>
+            {/* ── LEFT: read-only info panel ── */}
+            <Grid size={{ xs: 12, md: 6 }}>
+              <Paper sx={{ p: 2, borderRadius: 3, height: 542 }}>
+                {/* Ticket ID pill */}
                 <Box
-                  key={idx}
-                  display="flex"
-                  flexDirection={msg.sender === "user" ? "row-reverse" : "row"}
-                  alignItems="flex-end"
-                  gap={1}
+                  sx={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 1,
+                    mb: 2,
+                    px: 1,
+                    py: 0.8,
+                    bgcolor: "#f0f4ff",
+                    borderRadius: 2,
+                    border: "1px solid #d0d8f0",
+                  }}
                 >
-                  {msg.sender === "engineer" && (
-                    <Avatar
-                      sx={{
-                        width: 28,
-                        height: 28,
-                        bgcolor: "#6F60C1",
-                        fontSize: "0.75rem",
-                      }}
-                    >
-                      E
-                    </Avatar>
-                  )}
-                  <Box sx={{ maxWidth: "72%" }}>
+                  <Typography
+                    variant="body2"
+                    color="text.secondary"
+                    fontWeight={600}
+                  >
+                    Ticket ID:
+                  </Typography>
+                  <Typography variant="body2" fontWeight={700}>
+                    #{ticket?.TICKET_ID}
+                  </Typography>
+                </Box>
+
+                {/* Title row */}
+                <Paper variant="outlined" sx={{ borderRadius: 2, mb: 2 }}>
+                  <Box sx={{ display: "flex", px: 1.5, py: 1 }}>
                     <Box
                       sx={{
-                        px: 2,
-                        py: 1,
-                        borderRadius:
-                          msg.sender === "user"
-                            ? "16px 16px 4px 16px"
-                            : "16px 16px 16px 4px",
-                        bgcolor: msg.sender === "user" ? "#6F60C1" : "#fff",
-                        color: msg.sender === "user" ? "#fff" : "#000",
-                        boxShadow: "0 1px 4px rgba(0,0,0,0.1)",
+                        width: "50%",
+                        color: "text.secondary",
+                        fontWeight: 600,
                       }}
                     >
-                      <Typography variant="body2">{msg.text}</Typography>
+                      Title
                     </Box>
-                    <Typography
-                      variant="caption"
-                      color="text.secondary"
-                      sx={{
-                        px: 0.5,
-                        display: "block",
-                        textAlign: msg.sender === "user" ? "right" : "left",
-                      }}
-                    >
-                      {msg.time}
-                    </Typography>
+                    <Box sx={{ width: "70%" }}>
+                      <Typography variant="body1">
+                        {ticket?.TITLE || "—"}
+                      </Typography>
+                    </Box>
                   </Box>
+                </Paper>
+
+                {/* Info table */}
+                <TableContainer
+                  component={Paper}
+                  variant="outlined"
+                  sx={{ borderRadius: 2 }}
+                >
+                  <Table size="small">
+                    <TableBody>
+                      <TableRow>
+                        <TableCell
+                          sx={{ color: "text.secondary", fontWeight: 600 }}
+                        >
+                          Status
+                        </TableCell>
+                        <TableCell>
+                          <Typography
+                            variant="body2"
+                            sx={{
+                              display: "inline-block",
+                              px: 1.5,
+                              py: 0.3,
+                              borderRadius: 2,
+                              fontWeight: 600,
+                              fontSize: 12,
+                              bgcolor: statusBg,
+                              color: statusColor,
+                            }}
+                          >
+                            {statusLabel}
+                          </Typography>
+                        </TableCell>
+                      </TableRow>
+                      <TableRow>
+                        <TableCell
+                          sx={{ color: "text.secondary", fontWeight: 600 }}
+                        >
+                          Department
+                        </TableCell>
+                        <TableCell>{ticket?.CUST_DEPT_NAME || "—"}</TableCell>
+                      </TableRow>
+                      <TableRow>
+                        <TableCell
+                          sx={{ color: "text.secondary", fontWeight: 600 }}
+                        >
+                          Created On
+                        </TableCell>
+                        <TableCell>
+                          {ticket?.CREATED_AT
+                            ? dayjs(ticket.CREATED_AT).format("DD-MMM-YYYY")
+                            : "—"}
+                          {ticket?.CREATED_TIME
+                            ? ` · ${ticket.CREATED_TIME}`
+                            : ""}
+                        </TableCell>
+                      </TableRow>
+                      <TableRow>
+                        <TableCell
+                          sx={{ color: "text.secondary", fontWeight: 600 }}
+                        >
+                          Assigned Date
+                        </TableCell>
+                        <TableCell>
+                          {ticket?.ASSIGNED_DATE
+                            ? dayjs(ticket.ASSIGNED_DATE).format("DD-MMM-YYYY")
+                            : "—"}
+                        </TableCell>
+                      </TableRow>
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              </Paper>
+            </Grid>
+
+            {/* ── RIGHT: editable / viewOnly panel ── */}
+            <Grid size={{ xs: 12, md: 6 }}>
+              {/* Description */}
+              <Paper
+                sx={{ p: 2, borderRadius: 3, height: 227, overflow: "auto" }}
+              >
+                {/* Description TextField */}
+                <TextField
+                  fullWidth
+                  multiline
+                  size="small"
+                  rows={7}
+                  label="Ticket Description"
+                  value={description}
+                  onChange={(e) => {
+                    if (viewOnly) return;
+                    setDescription(e.target.value);
+                    if (e.target.value.trim())
+                      setErrors((p) => ({ ...p, description: "" }));
+                  }}
+                  error={!!errors.description}
+                  helperText={errors.description}
+                  slotProps={{ input: { readOnly: viewOnly } }}
+                  sx={
+                    viewOnly
+                      ? { "& .MuiOutlinedInput-root": { bgcolor: "#f5f5f5" } }
+                      : {}
+                  }
+                />
+              </Paper>
+
+              {/* Date + Docs */}
+              <Paper sx={{ p: 3, borderRadius: 3, mt: 1, height: "300px" }}>
+                <Grid container spacing={2}>
+                  {/* Left col: date + browse */}
+                  <Grid size={{ xs: 12, md: 4 }}>
+                    {/* DatePicker */}
+                    <DatePicker
+                      label="Exp Completion Date"
+                      format="DD-MMM-YYYY"
+                      value={expDate}
+                      onChange={(val) => {
+                        if (viewOnly) return;
+                        setExpDate(val);
+                        if (val) setErrors((p) => ({ ...p, expDate: "" }));
+                      }}
+                      readOnly={viewOnly}
+                      sx={{ mb: 1 }}
+                      slotProps={{
+                        textField: {
+                          fullWidth: true,
+                          size: "small",
+                          error: !!errors.expDate,
+                          helperText: errors.expDate,
+                          slotProps: { input: { readOnly: viewOnly } },
+                          sx: viewOnly ? { bgcolor: "#f5f5f5" } : {},
+                        },
+                      }}
+                    />
+                    <Typography fontWeight={600} mb={2} textAlign="center">
+                      Attach Documents
+                    </Typography>
+                    <input
+                      hidden
+                      type="file"
+                      multiple
+                      ref={fileInputRef}
+                      accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.csv,.xls,.xlsx"
+                      onChange={handleFileChange}
+                    />
+                    {!viewOnly && (
+                      <Button
+                        fullWidth
+                        variant="contained"
+                        size="small"
+                        sx={{ mb: 2 }}
+                        onClick={() => fileInputRef.current?.click()}
+                      >
+                        Browse Files
+                      </Button>
+                    )}
+                  </Grid>
+
+                  {/* Right col: docs table */}
+                  <Grid size={{ xs: 12, md: 8 }}>
+                    <TableContainer sx={{ maxHeight: 275 }}>
+                      <Table size="small" stickyHeader>
+                        <TableHead>
+                          <TableRow>
+                            <TableCell width="10%">No</TableCell>
+                            <TableCell>Attachment Name</TableCell>
+                            <TableCell width="25%" align="center">
+                              {viewOnly ? "Preview" : "Action"}
+                            </TableCell>
+                          </TableRow>
+                        </TableHead>
+                        <TableBody>
+                          {allDocs.length === 0 ? (
+                            <TableRow>
+                              <TableCell colSpan={3} align="center">
+                                No attachments added
+                              </TableCell>
+                            </TableRow>
+                          ) : (
+                            allDocs.map((doc, idx) => (
+                              <TableRow
+                                key={doc.isNew ? doc.tempId : doc.TICKET_DOC_ID}
+                                hover
+                              >
+                                <TableCell>{idx + 1}</TableCell>
+                                <TableCell
+                                  sx={{
+                                    maxWidth: 160,
+                                    whiteSpace: "nowrap",
+                                    overflow: "hidden",
+                                    textOverflow: "ellipsis",
+                                  }}
+                                >
+                                  <Box
+                                    display="flex"
+                                    alignItems="center"
+                                    gap={0.5}
+                                  >
+                                    <InsertDriveFileIcon
+                                      fontSize="small"
+                                      color={doc.isNew ? "success" : "action"}
+                                    />
+                                    <Typography variant="body2" noWrap>
+                                      {doc.isNew ? doc.name : doc.DOC_NAME}
+                                    </Typography>
+                                    {doc.isNew && (
+                                      <Typography
+                                        variant="caption"
+                                        sx={{
+                                          bgcolor: "#e8f5e9",
+                                          color: "#2e7d32",
+                                          px: 0.6,
+                                          py: 0.1,
+                                          borderRadius: 1,
+                                          fontWeight: 700,
+                                          fontSize: 10,
+                                          flexShrink: 0,
+                                        }}
+                                      >
+                                        NEW
+                                      </Typography>
+                                    )}
+                                  </Box>
+                                </TableCell>
+                                <TableCell align="center">
+                                  <Box display="flex" justifyContent="center">
+                                    <Tooltip title="Preview">
+                                      <IconButton
+                                        size="small"
+                                        color="primary"
+                                        onClick={() =>
+                                          doc.isNew
+                                            ? handlePreviewNew(doc)
+                                            : handlePreviewExisting(
+                                                doc.TICKET_DOC_ID,
+                                                doc.DOC_NAME,
+                                              )
+                                        }
+                                      >
+                                        <VisibilityIcon fontSize="small" />
+                                      </IconButton>
+                                    </Tooltip>
+                                    {/* Delete only in edit mode and status = 1 */}
+                                    {!viewOnly && ticket?.STATUS_ID === 1 && (
+                                      <Tooltip title="Delete">
+                                        <IconButton
+                                          size="small"
+                                          color="error"
+                                          onClick={() =>
+                                            doc.isNew
+                                              ? handleRemoveNew(doc.tempId)
+                                              : handleDelete(doc)
+                                          }
+                                        >
+                                          <DeleteIcon fontSize="small" />
+                                        </IconButton>
+                                      </Tooltip>
+                                    )}
+                                  </Box>
+                                </TableCell>
+                              </TableRow>
+                            ))
+                          )}
+                        </TableBody>
+                      </Table>
+                    </TableContainer>
+                  </Grid>
+                </Grid>
+              </Paper>
+            </Grid>
+
+            {/* ── Action buttons — hidden in viewOnly ── */}
+            <Grid size={{ xs: 12 }}>
+              {!viewOnly && ticket?.STATUS_ID === 1 && (
+                <Box display="flex" justifyContent="flex-end" gap={2}>
+                  <Button
+                    variant="contained"
+                    color="success"
+                    onClick={handleAccept}
+                  >
+                    Accept
+                  </Button>
+                  <Button
+                    variant="contained"
+                    color="error"
+                    onClick={handleReject}
+                  >
+                    Reject
+                  </Button>
+                  <Button
+                    variant="contained"
+                    color="primary"
+                    onClick={handleUpdate}
+                  >
+                    Update
+                  </Button>
                 </Box>
-              ))
-            )}
-            <div ref={chatEndRef} />
-          </Box>
-
-          <Divider />
-
-          {/* Input area */}
-          <Box sx={{ p: 1.5, display: "flex", gap: 1, bgcolor: "#fff" }}>
-            <TextField
-              fullWidth
-              size="small"
-              placeholder="Type a message..."
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  handleSend();
-                }
-              }}
-              sx={{ "& .MuiOutlinedInput-root": { borderRadius: "20px" } }}
-            />
-            <IconButton
-              onClick={handleSend}
-              disabled={!message.trim()}
-              sx={{
-                bgcolor: "#6F60C1",
-                color: "#fff",
-                borderRadius: "50%",
-                width: 40,
-                height: 40,
-                "&:hover": { bgcolor: "#5a4daa" },
-                "&:disabled": { bgcolor: "#e0e0e0" },
-              }}
-            >
-              <SendIcon fontSize="small" />
-            </IconButton>
-          </Box>
+              )}
+            </Grid>
+          </Grid>
         </Box>
-      </Drawer>
-    </LocalizationProvider>
+
+        {/* ── Preview Dialog ── */}
+        <Dialog
+          open={openPreview}
+          onClose={handleClosePreview}
+          maxWidth="md"
+          fullWidth
+        >
+          <DialogTitle>
+            <Box
+              display="flex"
+              alignItems="center"
+              justifyContent="space-between"
+            >
+              <Box display="flex" alignItems="center" gap={1}>
+                <InsertDriveFileIcon color="primary" />
+                <Typography fontWeight={700}>{previewName}</Typography>
+              </Box>
+              <IconButton onClick={handleClosePreview} size="small">
+                <CloseIcon />
+              </IconButton>
+            </Box>
+          </DialogTitle>
+          <DialogContent dividers sx={{ p: 0, height: "75vh" }}>
+            {previewUrl && (
+              <iframe
+                src={previewUrl}
+                width="100%"
+                height="100%"
+                style={{ border: "none" }}
+                title={previewName}
+              />
+            )}
+          </DialogContent>
+        </Dialog>
+
+        {/* ── Chat Drawer — always enabled ── */}
+        <TicketChat
+          open={chatOpen}
+          onClose={() => setChatOpen(false)}
+          ticketId={ticket?.TICKET_ID}
+          ticketTitle={ticket?.TITLE}
+          currentUserType={currentUserType}
+        />
+      </LocalizationProvider>
+    </>
   );
 };
 

@@ -14,30 +14,37 @@ import {
   TableRow,
   TablePagination,
   Skeleton,
+  IconButton,
+  Typography,
 } from "@mui/material";
-import { IconButton } from "@mui/material";
 import EditIcon from "@mui/icons-material/Edit";
 
 const loginTypeColor = { CU: "primary", SH: "success" };
+const SKELETON_ROWS = 7;
 
 const COLUMNS = [
-  { id: "action", label: "Action" },
-  { id: "NAME", label: "Name" },
-  { id: "CUST_USER_ID", label: "Username" },
-  { id: "CUSTOMER_NAME", label: "Customer Name" },
-  { id: "CUST_DEPT_NAME", label: "Dept Name" },
-  { id: "EMAIL", label: "Email" },
-  { id: "LOGIN_TYPE", label: "Login Type" },
-  { id: "MOBILE", label: "Mobile" },
-  { id: "ACTIVE", label: "Active" },
+  { id: "action", label: "Action", width: 50 },
+  { id: "NAME", label: "Name", width: 90 },
+  { id: "CUST_USER_ID", label: "Username", width: 120 },
+  { id: "CUSTOMER_NAME", label: "Customer Name", width: 150 },
+  { id: "CUST_DEPT_NAME", label: "Dept Name", width: 120 },
+  { id: "EMAIL", label: "Email", width: 150 },
+  { id: "LOGIN_TYPE", label: "Login Type", width: 80 },
+  { id: "MOBILE", label: "Mobile", width: 100 },
+  { id: "ACTIVE", label: "Active", width: 80 ,align: "center"},
 ];
 
-const SKELETON_ROWS = 7; // number of placeholder rows while loading
+const thSx = {
+  fontWeight: 600,
+  fontSize: 12,
+  whiteSpace: "nowrap",
+  color: "white",
+};
 
 const UserCreationTable = ({
   departments,
-  rows,
   filteredRows,
+  rows,
   loading,
   search,
   page,
@@ -94,7 +101,6 @@ const UserCreationTable = ({
             <Button
               variant="contained"
               size="small"
-              color="primary"
               fullWidth
               onClick={onSearch}
             >
@@ -119,122 +125,22 @@ const UserCreationTable = ({
           <Table size="small" sx={{ tableLayout: "fixed" }}>
             <TableHead>
               <TableRow sx={{ bgcolor: "#7E6ED7" }}>
-                <TableCell
-                  sx={{
-                    fontWeight: 600,
-                    fontSize: 12,
-                    whiteSpace: "nowrap",
-                    color: "white",
-                    width: 50,
-                    textAlign: "left",
-                  }}
-                >
-                  Action
-                </TableCell>
-                <TableCell
-                  sx={{
-                    fontWeight: 600,
-                    fontSize: 12,
-                    whiteSpace: "nowrap",
-                    color: "white",
-                    width: 90,
-                  }}
-                >
-                  Name
-                </TableCell>
-                <TableCell
-                  sx={{
-                    fontWeight: 600,
-                    fontSize: 12,
-                    whiteSpace: "nowrap",
-                    color: "white",
-                    width: 120,
-                  }}
-                >
-                  Username
-                </TableCell>
-                <TableCell
-                  sx={{
-                    fontWeight: 600,
-                    fontSize: 12,
-                    whiteSpace: "nowrap",
-                    color: "white",
-                    width: 150,
-                  }}
-                >
-                  Customer Name
-                </TableCell>
-                <TableCell
-                  sx={{
-                    fontWeight: 600,
-                    fontSize: 12,
-                    whiteSpace: "nowrap",
-                    color: "white",
-                    width: 120,
-                  }}
-                >
-                  Dept Name
-                </TableCell>
-                <TableCell
-                  sx={{
-                    fontWeight: 600,
-                    fontSize: 12,
-                    whiteSpace: "nowrap",
-                    color: "white",
-                    width: 150,
-                    textAlign: "center",
-                  }}
-                >
-                  Email
-                </TableCell>
-                <TableCell
-                  sx={{
-                    fontWeight: 600,
-                    fontSize: 12,
-                    whiteSpace: "nowrap",
-                    color: "white",
-                    width: 80,
-                    textAlign: "left",
-                  }}
-                >
-                  Login Type
-                </TableCell>
-                <TableCell
-                  sx={{
-                    fontWeight: 600,
-                    fontSize: 12,
-                    whiteSpace: "nowrap",
-                    color: "white",
-                    width: 100,
-                    textAlign: "center",
-                  }}
-                >
-                  Mobile
-                </TableCell>
-                <TableCell
-                  sx={{
-                    fontWeight: 600,
-                    fontSize: 12,
-                    whiteSpace: "nowrap",
-                    color: "white",
-                    width: 60,
-                    textAlign: "left",
-                  }}
-                >
-                  Active
-                </TableCell>
+                {COLUMNS.map((col) => (
+                  <TableCell key={col.id} sx={{ ...thSx, width: col.width }}>
+                    {col.label}
+                  </TableCell>
+                ))}
               </TableRow>
             </TableHead>
+
             <TableBody>
-              {/* ── Skeleton rows while loading ── */}
+              {/* Skeleton rows */}
               {loading &&
                 Array.from({ length: SKELETON_ROWS }).map((_, i) => (
-                  <TableRow key={`skeleton-${i}`}>
-                    {/* Action icon placeholder */}
+                  <TableRow key={`sk-${i}`}>
                     <TableCell>
                       <Skeleton variant="circular" width={24} height={24} />
                     </TableCell>
-                    {/* Text cell skeletons – vary widths for realism */}
                     {[90, 75, 110, 95, 130, 60, 80, 40].map((w, j) => (
                       <TableCell key={j}>
                         <Skeleton
@@ -248,7 +154,7 @@ const UserCreationTable = ({
                   </TableRow>
                 ))}
 
-              {/* ── Real data rows ── */}
+              {/* Data rows */}
               {!loading &&
                 pagedRows.map((row, index) => (
                   <TableRow
@@ -256,7 +162,7 @@ const UserCreationTable = ({
                     hover
                     sx={{ "&:last-child td": { border: 0 } }}
                   >
-                    <TableCell sx={{ whiteSpace: "nowrap" }}>
+                    <TableCell>
                       <IconButton
                         size="small"
                         color="primary"
@@ -278,29 +184,41 @@ const UserCreationTable = ({
                     <TableCell sx={{ fontSize: 13, color: "primary.main" }}>
                       {row.EMAIL}
                     </TableCell>
-                    <TableCell sx={{ textAlign: "right" }}>
+                    <TableCell>
                       <Chip
                         label={row.LOGIN_TYPE}
                         size="small"
                         color={loginTypeColor[row.LOGIN_TYPE] || "default"}
                       />
                     </TableCell>
-                    <TableCell>{row.MOBILE}</TableCell>
-                    <TableCell sx={{ textAlign: "right" }}>
-                      {row.ACTIVE}
+                    <TableCell sx={{ fontSize: 13 }}>{row.MOBILE}</TableCell>
+                    <TableCell>
+                      <Chip
+                        label={
+                          row.ACTIVE === "Y" || row.ACTIVE === 1 ? "Yes" : "No"
+                        }
+                        size="small"
+                        color={
+                          row.ACTIVE === "Y" || row.ACTIVE === 1
+                            ? "success"
+                            : "error"
+                        }
+                      />
                     </TableCell>
                   </TableRow>
                 ))}
 
-              {/* ── Empty state ── */}
+              {/* Empty state */}
               {!loading && rows.length === 0 && (
                 <TableRow>
                   <TableCell
                     colSpan={COLUMNS.length}
                     align="center"
-                    sx={{ py: 4, color: "text.secondary", fontSize: 13 }}
+                    sx={{ py: 4 }}
                   >
-                    No records found
+                    <Typography variant="body2" color="text.secondary">
+                      No records found
+                    </Typography>
                   </TableCell>
                 </TableRow>
               )}
@@ -314,9 +232,9 @@ const UserCreationTable = ({
           page={page}
           onPageChange={(_, p) => onPageChange(p)}
           rowsPerPage={rowsPerPage}
-          onRowsPerPageChange={(e) => {
-            onRowsPerPageChange(parseInt(e.target.value, 10));
-          }}
+          onRowsPerPageChange={(e) =>
+            onRowsPerPageChange(parseInt(e.target.value, 10))
+          }
           rowsPerPageOptions={[10, 25, 50]}
         />
       </Paper>

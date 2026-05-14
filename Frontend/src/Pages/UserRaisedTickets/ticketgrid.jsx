@@ -24,10 +24,17 @@ import InsertDriveFileIcon from "@mui/icons-material/InsertDriveFile";
 import CloseIcon from "@mui/icons-material/Close";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
+import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutline";
+import ReplayIcon from "@mui/icons-material/Replay";
 import dayjs from "dayjs";
 import Swal from "sweetalert2";
 import { PreviewTicketDocument } from "../../Services/AdminDashBoard.services";
+import {
+  verifyTicket,
+  reopenTicket,
+} from "../../Services/CreateTicket.Services";
 import EditIcon from "@mui/icons-material/Edit";
+
 const STATUS_MAP = {
   null: { label: "Pending", color: "#9e9e9e" },
   1: { label: "Under Review", color: "#5c6bc0" },
@@ -39,10 +46,11 @@ const STATUS_MAP = {
   7: { label: "Assigned", color: "#29b6f6" },
   8: { label: "In Progress", color: "#ffa726" },
   9: { label: "Testing", color: "#ab47bc" },
-  10: { label: "Verified", color: "#26c6da" },
+  10: { label: "Verification Pending", color: "#26c6da" },
   11: { label: "Reassigned", color: "#ff7043" },
   12: { label: "Completed", color: "#4caf50" },
   13: { label: "Attachment Required", color: "#ec407a" },
+  14: { label: "Reopened", color: "#26c6da" },
 };
 
 const getStatusInfo = (statusId) => {
@@ -50,23 +58,152 @@ const getStatusInfo = (statusId) => {
   return STATUS_MAP[key] || { label: "Unknown", color: "#bdbdbd" };
 };
 
+// ─── Verification Action Buttons ──────────────────────────────────────────────
+function VerificationActions({ ticketId, onRefresh }) {
+  const [loading, setLoading] = useState(false);
+
+  const handleVerified = async (e) => {
+    e.stopPropagation();
+
+    const { value: remarks, isConfirmed } = await Swal.fire({
+      title: "Mark as Verified?",
+      text: "This will close the ticket as completed.",
+      icon: "question",
+      input: "textarea",
+      inputLabel: "Remarks",
+      inputPlaceholder: "Enter your remarks here...",
+      inputAttributes: { rows: 3 },
+      inputValidator: (value) => {
+        if (!value?.trim()) return "Remarks are required!";
+      },
+      showCancelButton: true,
+      confirmButtonColor: "#2e7d32",
+      cancelButtonColor: "#9e9e9e",
+      confirmButtonText: "Yes, Verified!",
+    });
+
+    if (!isConfirmed) return;
+
+    try {
+      setLoading(true);
+      await verifyTicket(ticketId, remarks.trim());
+      Swal.fire({
+        icon: "success",
+        title: "Ticket Verified!",
+        text: "Ticket has been marked as completed.",
+        timer: 1800,
+        showConfirmButton: false,
+      });
+      onRefresh();
+    } catch (err) {
+      console.error(err);
+      Swal.fire({ icon: "error", title: "Failed to verify ticket" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleReassign = async (e) => {
+    e.stopPropagation();
+    const result = await Swal.fire({
+      title: "Reopen Ticket?",
+      text: "The issue will be sent back to the engineer for rework.",
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonColor: "#e65100",
+      cancelButtonColor: "#9e9e9e",
+      confirmButtonText: "Yes, Reopen!",
+    });
+    if (!result.isConfirmed) return;
+
+    try {
+      setLoading(true);
+      await reopenTicket(ticketId);
+      Swal.fire({
+        icon: "success",
+        title: "Ticket Reopened!",
+        text: "Engineer has been notified to rework.",
+        timer: 1800,
+        showConfirmButton: false,
+      });
+      onRefresh();
+    } catch (err) {
+      console.error(err);
+      Swal.fire({ icon: "error", title: "Failed to reopen ticket" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Box display="flex" gap={0.8} alignItems="center">
+      <Tooltip title="Issue is resolved — close ticket">
+        <span>
+          <Button
+            size="small"
+            variant="contained"
+            disabled={loading}
+            startIcon={<CheckCircleOutlineIcon sx={{ fontSize: 14 }} />}
+            onClick={handleVerified}
+            sx={{
+              backgroundColor: "#2e7d32",
+              fontSize: "10px",
+              textTransform: "none",
+              fontWeight: 700,
+              px: 1,
+              py: 0.4,
+              minWidth: 0,
+              "&:hover": { backgroundColor: "#1b5e20" },
+            }}
+          >
+            Verified
+          </Button>
+        </span>
+      </Tooltip>
+
+      <Tooltip title="Issue not resolved — send back to engineer">
+        <span>
+          <Button
+            size="small"
+            variant="contained"
+            disabled={loading}
+            startIcon={<ReplayIcon sx={{ fontSize: 14 }} />}
+            onClick={handleReassign}
+            sx={{
+              backgroundColor: "#e65100",
+              fontSize: "10px",
+              textTransform: "none",
+              fontWeight: 700,
+              px: 1,
+              py: 0.4,
+              minWidth: 0,
+              "&:hover": { backgroundColor: "#bf360c" },
+            }}
+          >
+            Reopen
+          </Button>
+        </span>
+      </Tooltip>
+    </Box>
+  );
+}
+
 export default function TicketGrid({
   tickets = [],
   selectedDate,
   loading = false,
+  onRefresh,
 }) {
   const [openDocsDialog, setOpenDocsDialog] = useState(false);
   const [selectedDocs, setSelectedDocs] = useState([]);
   const [selectedTicketTitle, setSelectedTicketTitle] = useState("");
-
   const [openPreview, setOpenPreview] = useState(false);
   const [previewUrl, setPreviewUrl] = useState("");
   const [previewName, setPreviewName] = useState("");
-
   const [openDetails, setOpenDetails] = useState(false);
   const [detailTicket, setDetailTicket] = useState(null);
   const navigate = useNavigate();
-  // Build all rows first
+
   const allRows = tickets.map((t) => {
     const { label, color } = getStatusInfo(t.STATUS_ID);
     return {
@@ -87,7 +224,6 @@ export default function TicketGrid({
     };
   });
 
-  // Filter by selected date only when a date is provided
   const rows = selectedDate
     ? allRows.filter(
         (row) =>
@@ -95,7 +231,7 @@ export default function TicketGrid({
           dayjs(row.createdAtRaw).format("YYYY-MM-DD") ===
             dayjs(selectedDate).format("YYYY-MM-DD"),
       )
-    : allRows;
+    : allRows.filter((row) => row.statusId !== 12);
 
   const handleOpenDocs = (e, row) => {
     e.stopPropagation();
@@ -185,6 +321,7 @@ export default function TicketGrid({
             <IconButton
               size="small"
               color="primary"
+              disabled={params.row.statusId === 12}
               onClick={(e) => handleEdit(e, params.row)}
             >
               <EditIcon fontSize="small" />
@@ -193,6 +330,7 @@ export default function TicketGrid({
         </Tooltip>
       ),
     },
+    ,
     {
       field: "id",
       headerName: "Ticket ID",
@@ -267,6 +405,30 @@ export default function TicketGrid({
         </Box>
       ),
     },
+
+    // ── Verification column — only shows buttons when status = 10 ─────────────
+    ...(rows.some((row) => row.statusId === 10)
+      ? [
+          {
+            field: "verification",
+            headerName: "Verification",
+            width: 200,
+            align: "center",
+            headerAlign: "center",
+            sortable: false,
+            renderCell: (params) => {
+              if (params.row.statusId !== 10) return null;
+              return (
+                <VerificationActions
+                  ticketId={params.row.id}
+                  onRefresh={onRefresh}
+                />
+              );
+            },
+          },
+        ]
+      : []),
+
     {
       field: "createdAt",
       headerName: "Created At",
@@ -327,7 +489,6 @@ export default function TicketGrid({
         >
           {loading ? (
             <Box sx={{ px: 1.5, pt: 1 }}>
-              {/* Header skeleton — mirrors DataGrid column headers */}
               <Box
                 sx={{
                   display: "flex",
@@ -338,7 +499,7 @@ export default function TicketGrid({
                   borderColor: "divider",
                 }}
               >
-                {[80, 100, 120, 80, 200, 200, 130, 140, 110].map((w, i) => (
+                {[80, 100, 120, 80, 200, 200, 200, 130, 140, 28].map((w, i) => (
                   <Skeleton
                     key={i}
                     variant="text"
@@ -348,8 +509,6 @@ export default function TicketGrid({
                   />
                 ))}
               </Box>
-
-              {/* Row skeletons — 8 rows matching rowHeight={52} */}
               {Array.from({ length: 8 }).map((_, i) => (
                 <Box
                   key={i}
@@ -362,63 +521,60 @@ export default function TicketGrid({
                     borderColor: "grey.100",
                   }}
                 >
-                  {/* Action icon */}
                   <Skeleton
                     variant="circular"
                     width={28}
                     height={28}
                     sx={{ flexShrink: 0 }}
                   />
-                  {/* Ticket ID */}
                   <Skeleton
                     variant="text"
                     width={60}
                     height={18}
                     sx={{ flexShrink: 0 }}
                   />
-                  {/* Title — flex fills remaining space */}
                   <Skeleton
                     variant="text"
                     width={`${30 + (i % 5) * 8}%`}
                     height={18}
                     sx={{ flex: 1 }}
                   />
-                  {/* Details icon */}
                   <Skeleton
                     variant="circular"
                     width={28}
                     height={28}
                     sx={{ flexShrink: 0 }}
                   />
-                  {/* Department */}
                   <Skeleton
                     variant="text"
                     width={140}
                     height={18}
                     sx={{ flexShrink: 0 }}
                   />
-                  {/* Status chip */}
                   <Skeleton
                     variant="rounded"
                     width={130}
                     height={26}
                     sx={{ borderRadius: "6px", flexShrink: 0 }}
                   />
-                  {/* Created At */}
+                  <Skeleton
+                    variant="rounded"
+                    width={180}
+                    height={30}
+                    sx={{ borderRadius: "6px", flexShrink: 0 }}
+                  />
                   <Skeleton
                     variant="text"
                     width={90}
                     height={18}
                     sx={{ flexShrink: 0 }}
                   />
-                  {/* Exp. Completion */}
                   <Skeleton
                     variant="text"
                     width={100}
                     height={18}
                     sx={{ flexShrink: 0 }}
                   />
-                  {/* Docs icon */}
                   <Skeleton
                     variant="circular"
                     width={28}
@@ -671,7 +827,6 @@ export default function TicketGrid({
                     >
                       {label}
                     </Typography>
-
                     <Typography
                       component="span"
                       sx={{

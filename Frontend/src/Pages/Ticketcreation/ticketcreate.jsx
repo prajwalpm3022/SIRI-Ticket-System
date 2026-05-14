@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import {
   TextField,
@@ -14,39 +14,47 @@ import {
   Box,
   Grid,
   Skeleton,
+  IconButton,
+  Dialog,
+  DialogTitle,
+  DialogContent,
 } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
 import { LocalizationProvider, DatePicker } from "@mui/x-date-pickers";
 import DeleteIcon from "@mui/icons-material/Delete";
 import CloseIcon from "@mui/icons-material/Close";
-import { IconButton } from "@mui/material";
 import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
+import { useQuery } from "@tanstack/react-query";
 import {
   CreateTickets,
   CategoryGridData,
+  DeleteTicketDocByUser,
 } from "../../Services/CreateTicket.Services";
 import {
   UpdateUserTicket,
   PreviewTicketDocument,
 } from "../../Services/AdminDashBoard.services";
-import { DeleteTicketDocByUser } from "../../Services/CreateTicket.Services";
 import dayjs from "dayjs";
 import {
   showPostSuccess,
   showPostError,
   showAlert,
+  showUpdateSuccess,
+  showUpdateError,
 } from "../../Components/swal_alert";
 import Swal from "sweetalert2";
-import { Dialog, DialogTitle, DialogContent } from "@mui/material";
-
+import TicketChat from "../TicketChat/TicketChat";
 import secureLocalStorage from "react-secure-storage";
+import ChatIcon from "@mui/icons-material/Chat";
+import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import VisibilityIcon from "@mui/icons-material/Visibility";
+import CircularBubbleLoading from "../../Components/loading";
 const columns = [
   { field: "CATEGORY_ID", headerName: "ID", width: 50 },
   {
     field: "CATEGORY_NAME",
     headerName: "Category Name",
-    width: 620,
+    width: 530,
     editable: true,
   },
 ];
@@ -55,11 +63,9 @@ const CreateTicket = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  //  Detect edit mode from navigation state
   const isEditMode = location.state?.isEdit || false;
   const ticketId = location.state?.ticketId || null;
   const statusId = location.state?.statusId ?? null;
-
   const isViewOnly = isEditMode && Number(statusId) !== 1;
 
   const [attachments, setAttachments] = useState([]);
@@ -70,34 +76,32 @@ const CreateTicket = () => {
     Date: null,
     File: [],
   });
-  const [categorydata, setCategoryData] = useState([]);
   const [errors, setErrors] = useState({});
-  // state
   const [previewFile, setPreviewFile] = useState(null);
-  const [categoryLoading, setCategoryLoading] = useState(false);
-  // helper — checks if file is an image by extension
+  const [chatOpen, setChatOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const currentUserType = secureLocalStorage.getItem("LOGIN_TYPE");
+
   const isImageFile = (name) => /\.(png|jpe?g|gif|webp)$/i.test(name);
   const isPreviewableFile = (name) =>
     /\.(png|jpe?g|gif|webp|pdf|doc|docx|xls|xlsx|txt|csv)$/i.test(name);
 
-  const fetchGrid = async () => {
-    setCategoryLoading(true);
-    try {
-      let res = await CategoryGridData();
-      setCategoryData(res?.items);
-    } catch (error) {
-      console.error(error);
-    } finally {
-      setCategoryLoading(false);
-    }
-  };
+  // ─── React Query ───────────────────────────────────────────
+  const { data: categorydata = [], isFetching: categoryLoading } = useQuery({
+    queryKey: ["categoryGrid"],
+    queryFn: async () => {
+      const res = await CategoryGridData();
+      return res?.items || [];
+    },
+    enabled: !isEditMode, // only fetch categories in create mode
+    staleTime: 5 * 60 * 1000,
+  });
 
+  // ─── Edit mode init ────────────────────────────────────────
   useEffect(() => {
-    fetchGrid();
-
     if (isEditMode && location.state?.rowData) {
       const row = location.state.rowData;
-
       setFormData((prev) => ({
         ...prev,
         Title: row.Title || "",
@@ -105,18 +109,33 @@ const CreateTicket = () => {
         statusName: row.statusName,
         Date: row.Date ? dayjs(row.Date) : null,
       }));
-
       if (row.docs?.length > 0) {
-        const existingFiles = row.docs.map((doc) => ({
-          name: doc.DOC_NAME,
-          id: doc.TICKET_DOC_ID,
-          isExisting: true,
-        }));
-        setAttachments(existingFiles);
+        setAttachments(
+          row.docs.map((doc) => ({
+            name: doc.DOC_NAME,
+            id: doc.TICKET_DOC_ID,
+            isExisting: true,
+          })),
+        );
       }
+      navigate(location.pathname, {
+        replace: true,
+        state: {
+          isEdit: true,
+          ticketId: location.state.ticketId,
+          statusId: location.state.statusId,
+          rowData: location.state.rowData,
+        },
+      });
+    } else {
+      setFormData({ Title: "", TicketDesc: "", Date: null, File: [] });
+      setAttachments([]);
+      setNewDocs([]);
+      setErrors({});
     }
-  }, []);
+  }, [isEditMode]);
 
+  // ─── Handlers ──────────────────────────────────────────────
   const handleRowClick = (row) => {
     setFormData((prev) => ({ ...prev, Title: row.CATEGORY_NAME }));
     setErrors((prev) => ({ ...prev, Title: "" }));
@@ -137,9 +156,8 @@ const CreateTicket = () => {
       "application/vnd.ms-excel",
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     ];
-
     const validFiles = [];
-    for (let file of files) {
+    for (const file of files) {
       if (!allowedTypes.includes(file.type)) {
         showAlert(
           "warning",
@@ -158,7 +176,6 @@ const CreateTicket = () => {
       }
       validFiles.push(file);
     }
-
     if (validFiles.length > 0) {
       const updatedFiles = [...attachments, ...validFiles];
       setAttachments(updatedFiles);
@@ -184,24 +201,22 @@ const CreateTicket = () => {
     }));
   };
 
-  //  CREATE
   const handleSubmit = async () => {
-    let newErrors = {};
+    const newErrors = {};
     if (!formData.TicketDesc.trim())
       newErrors.TicketDesc = "Description is required";
     if (!formData.Date) newErrors.Date = "Expected date is required";
-
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
       return;
     }
 
-    let custID = secureLocalStorage.getItem("USER_ID");
-    let cust_dept_id = secureLocalStorage.getItem("DEPT_ID");
-    let login_id = secureLocalStorage.getItem("CUST_LOGIN_ID");
-    let dept_name_short = secureLocalStorage.getItem("DEPT_SHORT_NAME");
-    let cust_short_name = secureLocalStorage.getItem("CUST_SHORT_NAME");
-
+    const custID = secureLocalStorage.getItem("USER_ID");
+    const cust_dept_id = secureLocalStorage.getItem("DEPT_ID");
+    const login_id = secureLocalStorage.getItem("CUST_LOGIN_ID");
+    const dept_name_short = secureLocalStorage.getItem("DEPT_SHORT_NAME");
+    const cust_short_name = secureLocalStorage.getItem("CUST_SHORT_NAME");
+    setIsSubmitting(true);
     try {
       const formPayload = new FormData();
       formPayload.append("TITLE", formData.Title || "Undefined");
@@ -211,38 +226,40 @@ const CreateTicket = () => {
         "CLI_EXCOMP_DATE",
         dayjs(formData.Date).format("YYYY-MM-DD"),
       );
-      formPayload.append("STATUS_ID", Number(1));
+      formPayload.append("STATUS_ID", 1);
       formPayload.append("CUSTOMER_DEPT_ID", Number(cust_dept_id));
       formPayload.append("CUST_LOGIN_ID", Number(login_id));
       formPayload.append("DOC_UPLOADER", Number(login_id));
       formPayload.append(
         "TICKET_PREFIX",
-        String(`${cust_short_name}/${dept_name_short}`),
+        `${cust_short_name}/${dept_name_short}`,
       );
       formPayload.append(
         "TKT_DOC_FROM",
-        String(`${cust_short_name}_${dept_name_short}_${login_id}`),
+        `${cust_short_name}_${dept_name_short}_${login_id}`,
       );
       attachments.forEach((file) => formPayload.append("documents", file));
 
       const response = await CreateTickets(formPayload);
+
       if (response?.Status === 1) {
         showPostSuccess("Ticket created successfully");
         handleClear();
+        setTimeout(() => navigate("/Drawer/open-ticket"), 1500);
       } else {
         showPostError("Ticket creation failed");
       }
-    } catch (error) {
-      console.error("Submission failed:", error);
+    } catch {
       showPostError("Ticket creation failed");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const handlePreview = async (file) => {
     if (file.isExisting) {
-      // reuse the same pattern from TicketGrid
       try {
-        const res = await PreviewTicketDocument(file.id); // import this service
+        const res = await PreviewTicketDocument(file.id);
         const blob = new Blob([res.data], {
           type: res.headers["content-type"],
         });
@@ -253,10 +270,9 @@ const CreateTicket = () => {
           setPreviewFile({
             url: `https://docs.google.com/viewer?url=${encodeURIComponent(directUrl)}&embedded=true`,
             name: file.name,
-            isDoc: true,
           });
         } else {
-          setPreviewFile({ url: blobUrl, name: file.name, isDoc: false });
+          setPreviewFile({ url: blobUrl, name: file.name });
         }
       } catch {
         Swal.fire({
@@ -267,12 +283,10 @@ const CreateTicket = () => {
         });
       }
     } else {
-      // new local file — blob directly
-      const url = URL.createObjectURL(file);
-      setPreviewFile({ url, name: file.name, isDoc: false });
+      setPreviewFile({ url: URL.createObjectURL(file), name: file.name });
     }
   };
-  //  UPDATE
+
   const handleUpdate = async () => {
     const newErrors = {};
     if (!formData.TicketDesc.trim())
@@ -284,7 +298,7 @@ const CreateTicket = () => {
     }
 
     const docUploader = secureLocalStorage.getItem("CUST_LOGIN_ID");
-
+    setIsSubmitting(true);
     try {
       const payload = new FormData();
       payload.append("DESCRIPTION", formData.TicketDesc);
@@ -298,21 +312,13 @@ const CreateTicket = () => {
 
       const res = await UpdateUserTicket(ticketId, payload);
       if (res?.Status === 1) {
-        Swal.fire({
-          icon: "success",
-          title: "Ticket updated successfully",
-          showConfirmButton: false,
-          timer: 1800,
-        });
+        showUpdateSuccess("Ticket updated successfully");
         navigate(-1);
       }
     } catch {
-      Swal.fire({
-        icon: "error",
-        title: "Update failed",
-        showConfirmButton: false,
-        timer: 1500,
-      });
+      showUpdateError("Ticket update failed");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -325,25 +331,19 @@ const CreateTicket = () => {
       confirmButtonText: "Yes, delete it",
       confirmButtonColor: "#d33",
     });
-
     if (!confirm.isConfirmed) return;
-
     try {
-      let res = await DeleteTicketDocByUser(ticket_doc_id);
-
+      const res = await DeleteTicketDocByUser(ticket_doc_id);
       if (res?.Status === 1) {
         setAttachments((prev) => prev.filter((f) => f.id !== ticket_doc_id));
-        setTimeout(() => {
-          Swal.fire({
-            icon: "success",
-            title: "Document deleted successfully",
-            showConfirmButton: false,
-            timer: 1500,
-          });
-        }, 300);
+        Swal.fire({
+          icon: "success",
+          title: "Document deleted successfully",
+          showConfirmButton: false,
+          timer: 1500,
+        });
       }
-    } catch (error) {
-      console.error(error);
+    } catch {
       Swal.fire({
         icon: "error",
         title: "Failed to delete document",
@@ -365,13 +365,56 @@ const CreateTicket = () => {
     setFormData({ Title: "", TicketDesc: "", Date: null, File: [] });
   };
 
+  // ─── Render ────────────────────────────────────────────────
   return (
     <>
+      <CircularBubbleLoading
+        isLoading={isSubmitting}
+        messages={[
+          "Processing your Ticket...",
+          "Uploading files...",
+          "Saving changes...",
+          "Almost there...",
+          "Hang tight...",
+        ]}
+      />
       <Box sx={{ p: 2 }}>
-        {/*  Dynamic heading */}
-        <Typography variant="h4" fontWeight={600} mb={1}>
-          {isEditMode ? "Update Ticket" : "Create Ticket"}
-        </Typography>
+        <Box
+          display="flex"
+          alignItems="center"
+          justifyContent="space-between"
+          mb={1}
+        >
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+            {isEditMode && (
+              <IconButton onClick={() => navigate(-1)} size="small">
+                <ArrowBackIcon />
+              </IconButton>
+            )}
+            <Typography variant="h4" fontWeight={600}>
+              {isEditMode ? "UPDATE TICKET" : "CREATE TICKET"}
+            </Typography>
+          </Box>
+          {isEditMode && (
+            <Button
+              variant="contained"
+              startIcon={<ChatIcon />}
+              onClick={() => setChatOpen(true)}
+              sx={{
+                background: "linear-gradient(135deg, #6F60C1, #8f7df0)",
+                borderRadius: 2,
+                textTransform: "none",
+                fontWeight: 600,
+                boxShadow: "0 4px 12px rgba(111,96,193,0.3)",
+                "&:hover": {
+                  background: "linear-gradient(135deg, #5d4fb0, #7b6be0)",
+                },
+              }}
+            >
+              Chat with Engineer
+            </Button>
+          )}
+        </Box>
 
         <Grid container spacing={2}>
           <Grid size={{ xs: 12, md: 6 }}>
@@ -424,7 +467,6 @@ const CreateTicket = () => {
                 <Box sx={{ height: 542, width: "100%" }}>
                   {categoryLoading ? (
                     <Box sx={{ px: 1, pt: 1 }}>
-                      {/* Header skeleton */}
                       <Box
                         sx={{
                           display: "flex",
@@ -438,8 +480,6 @@ const CreateTicket = () => {
                         <Skeleton variant="text" width={40} height={20} />
                         <Skeleton variant="text" width={200} height={20} />
                       </Box>
-
-                      {/* Row skeletons */}
                       {Array.from({ length: 12 }).map((_, i) => (
                         <Box
                           key={i}
@@ -455,15 +495,12 @@ const CreateTicket = () => {
                           <Skeleton variant="text" width={30} height={16} />
                           <Skeleton
                             variant="text"
-                            // vary widths to look realistic
                             width={`${55 + (i % 4) * 10}%`}
                             height={16}
                             sx={{ borderRadius: 1 }}
                           />
                         </Box>
                       ))}
-
-                      {/* Pagination skeleton */}
                       <Box
                         sx={{
                           display: "flex",
@@ -486,6 +523,7 @@ const CreateTicket = () => {
                       getRowId={(row) => row.CATEGORY_ID}
                       onRowClick={(params) => handleRowClick(params.row)}
                       rowHeight={35}
+                      sx={{ width: "100%" }}
                       initialState={{
                         pagination: { paginationModel: { pageSize: 12 } },
                       }}
@@ -503,7 +541,7 @@ const CreateTicket = () => {
               sx={{ p: 2, borderRadius: 3, height: 267, overflow: "auto" }}
             >
               <Grid container spacing={1}>
-                <Grid size={{ xs: 12, md: 12 }}>
+                <Grid size={{ xs: 12 }}>
                   {formData.Title && !isEditMode && (
                     <Paper>
                       <Box
@@ -517,7 +555,7 @@ const CreateTicket = () => {
                           variant="body1"
                           sx={{ mt: 1, p: 1, fontWeight: 600 }}
                         >
-                          Title :
+                          Title:{" "}
                           <span
                             style={{
                               fontSize: "16px",
@@ -525,7 +563,6 @@ const CreateTicket = () => {
                               fontWeight: 100,
                             }}
                           >
-                            {" "}
                             {formData.Title}
                           </span>
                         </Typography>
@@ -542,7 +579,7 @@ const CreateTicket = () => {
                     </Paper>
                   )}
                 </Grid>
-                <Grid size={{ xs: 12, md: 12 }}>
+                <Grid size={{ xs: 12 }} mt={1}>
                   <TextField
                     fullWidth
                     multiline
@@ -552,16 +589,29 @@ const CreateTicket = () => {
                     name="TicketDesc"
                     value={formData.TicketDesc}
                     onChange={(e) => {
-                      const value = e.target.value;
-                      if (value.length <= 300) {
-                        handleValidation(e);
-                      }
+                      if (e.target.value.length <= 300) handleValidation(e);
                     }}
                     error={!!errors.TicketDesc}
                     helperText={errors.TicketDesc}
-                    InputProps={{ readOnly: isViewOnly, maxLength: 300 }}
+                    slotProps={{ input: { readOnly: isViewOnly } }}
                     disabled={isViewOnly}
                   />
+                  <Typography
+                    variant="caption"
+                    display="block"
+                    textAlign="right"
+                    sx={{
+                      mt: 0.5,
+                      color:
+                        formData.TicketDesc.length >= 300
+                          ? "error.main"
+                          : formData.TicketDesc.length >= 250
+                            ? "warning.main"
+                            : "text.secondary",
+                    }}
+                  >
+                    {formData.TicketDesc.length} / 300
+                  </Typography>
                 </Grid>
               </Grid>
             </Paper>
@@ -589,7 +639,7 @@ const CreateTicket = () => {
                       }}
                     />
                   </LocalizationProvider>
-                  <Typography fontWeight={600} mb={2} textAlign={"center"}>
+                  <Typography fontWeight={600} mb={2} textAlign="center">
                     Attach Documents
                   </Typography>
                   {!isViewOnly && (
@@ -685,15 +735,15 @@ const CreateTicket = () => {
             </Paper>
           </Grid>
 
-          <Grid size={{ xs: 12, md: 12 }}>
+          <Grid size={{ xs: 12 }}>
             {!isViewOnly && (
               <Box display="flex" justifyContent="flex-end" gap={2}>
                 <Button
                   variant="contained"
-                  color="primary"
+                  color={isEditMode ? "success" : "primary"}
                   onClick={isEditMode ? handleUpdate : handleSubmit}
                 >
-                  {isEditMode ? "Update Ticket" : "Save Ticket"}
+                  {isEditMode ? "Update" : "Save"}
                 </Button>
                 <Button variant="contained" color="error" onClick={handleClear}>
                   Clear
@@ -703,6 +753,8 @@ const CreateTicket = () => {
           </Grid>
         </Grid>
       </Box>
+
+      {/* Preview Dialog */}
       <Dialog
         open={!!previewFile}
         onClose={() => setPreviewFile(null)}
@@ -749,6 +801,16 @@ const CreateTicket = () => {
             ))}
         </DialogContent>
       </Dialog>
+
+      {isEditMode && (
+        <TicketChat
+          open={chatOpen}
+          onClose={() => setChatOpen(false)}
+          ticketId={ticketId}
+          ticketTitle={location.state?.rowData?.Title || ""}
+          currentUserType={currentUserType}
+        />
+      )}
     </>
   );
 };

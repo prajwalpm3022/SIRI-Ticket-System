@@ -1,10 +1,10 @@
 const { Router } = require("express")
-const { get_leave_type_dd,apply_leave,get_remaining_leave,calculate_leave_days,getemployeeleavedetail,getEmployeeLeaveCards,previewLeaveDocument,get_employee_lop_days,check_leave_overlap,getTodayApprovedLeavesForAdmin} = require("../../controllers/leavecontroller/leave.controller")
+const { get_leave_type_dd, apply_leave, get_remaining_leave, calculate_leave_days, getemployeeleavedetail, getEmployeeLeaveCards, previewLeaveDocument, get_employee_lop_days, check_leave_overlap, getTodayApprovedLeavesForAdmin, getEmployeeLeaveDetails } = require("../../controllers/leavecontroller/leave.controller")
 const { authenticate } = require('../../middlewares/auth.middleware')
 const upload = require("../../middlewares/upload.middleware");
 const router = Router()
 
-router.get("/",authenticate, get_leave_type_dd)
+router.get("/", authenticate, get_leave_type_dd)
 router.post(
   "/apply",
   authenticate,
@@ -21,14 +21,15 @@ router.post(
   authenticate,
   calculate_leave_days
 );
-router.get("/history",authenticate, getemployeeleavedetail)
-router.get("/cards",authenticate, getEmployeeLeaveCards)
+router.get("/history", authenticate, getemployeeleavedetail)
+router.get("/cards", authenticate, getEmployeeLeaveCards)
 router.get(
   "/document/:docId",
   previewLeaveDocument
 );
-router.get("/getlopcount",authenticate, get_employee_lop_days)
-router.post("/checkoverlap",authenticate, check_leave_overlap)
-router.get("/gettodaysleaves",authenticate,getTodayApprovedLeavesForAdmin)
+router.get("/getlopcount", authenticate, get_employee_lop_days)
+router.post("/checkoverlap", authenticate, check_leave_overlap)
+router.get("/gettodaysleaves", authenticate, getTodayApprovedLeavesForAdmin)
+router.get("/leaves/:empId", authenticate, getEmployeeLeaveDetails);
 
 module.exports = router
